@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}ReAceite CDMX: tu aceite usado vale{% endblock %}
+{% block contenido %}
+<section class="portada">
+  <div class="portada__cabeza">
+    <div id="cubeta-portada" aria-hidden="true"></div>
+    <h1>Que tu aceite usado no termine en la coladera</h1>
+  </div>
+  <p>Pide la recolección desde el QR de tu bote. Juntamos el aceite de tu colonia, lo pesamos frente a ti y te pagamos al momento por transferencia.</p>
+  <div class="dato-agua">
+    <span class="cifra">1,000 L</span>
+    <span>de agua deja de contaminarse por cada litro de aceite que no va al drenaje.</span>
+  </div>
+  <div class="acciones">
+    <a id="mi-comercio" class="boton boton--aceite" href="#" hidden></a>
+    <a class="boton boton--aceite" href="{{ url_for('web.registro') }}">Registrar mi comercio</a>
+    <a class="boton" href="{{ url_for('web.recolector') }}">Soy recolector</a>
+    <a class="boton" href="{{ url_for('web.impacto') }}">Ver el impacto del piloto</a>
+  </div>
+  <p class="suave chico">Piloto en Condesa, Hipódromo, Roma Norte y Escandón. <a href="{{ url_for('web.proyecto') }}">Cómo funciona el proyecto</a>.</p>
+  <p class="suave chico">Prototipo académico del grupo 900 CIB, Universidad La Salle Ciudad de México. Los pagos son simulados.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/inicio.js') }}"></script>{% endblock %}

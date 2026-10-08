@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Ruta del día · ReAceite{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">{% endblock %}
+{% block contenido %}
+<h1>Ruta del día</h1>
+<div class="acciones">
+  <button id="escanear" class="boton boton--aceite" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M7 7h4v4H7zM13 13h4v4h-4zM13 7h4v4h-4zM7 13h4v4H7z" fill="currentColor" opacity=".85"/></svg>
+    Escanear el QR del bote
+  </button>
+  <a class="boton" href="{{ url_for('web.monitor') }}">Abrir el centro de control</a>
+</div>
+
+<section class="bloque" aria-live="polite">
+  <div id="rutas"></div>
+  <p id="sin-rutas" class="vacio" hidden>No hay rutas activas. Una ruta sale sola cuando una colonia junta 20 L, o cuando una solicitud lleva 48 horas esperando.</p>
+</section>
+
+<section class="bloque">
+  <h2>Cubetas por colonia</h2>
+  <div id="zonas" class="zonas-mini"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/recolector.js') }}"></script>
+{% endblock %}

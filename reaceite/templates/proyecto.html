@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block titulo %}El proyecto · ReAceite CDMX{% endblock %}
+{% block clase_main %}ancho presentacion{% endblock %}
+{% block contenido %}
+<nav class="indice no-imprimir" aria-label="Secciones">
+  <a class="chip" href="#problema">El problema</a>
+  <a class="chip" href="#tecnologia">Inteligencia tecnológica</a>
+  <a class="chip" href="#ideacion">Ideación</a>
+  <a class="chip" href="#arquitectura">Arquitectura</a>
+  <a class="chip" href="#demo">Demo en vivo</a>
+</nav>
+
+<section id="problema">
+  <h1>El aceite que va a la coladera tapa el drenaje y contamina el agua</h1>
+  <p>El reto: recolectar el aceite usado de las calles de la CDMX para frenar el colapso del drenaje en lluvias intensas, pagarle al comercio informal en el momento y llevar ese aceite a plantas de biocombustible.</p>
+  <div class="datos-grandes">
+    <div><span class="cifra">5 a 40+ L</span>de aceite usado por semana en cada comercio encuestado</div>
+    <div><span class="cifra">1 a 3 días</span>es lo que aguantan guardándolo los que más generan</div>
+    <div><span class="cifra">80 %</span>de los comercios usaría una app sencilla; el resto, probablemente sí</div>
+    <div><span class="cifra">1,000 L</span>de agua contamina cada litro de aceite que llega al drenaje</div>
+  </div>
+  <p class="suave chico" style="margin-top:1rem">Fuente: trabajo de campo del Sprint 1 (encuestas y entrevistas a comercios de Condesa e Hipódromo).</p>
+</section>
+
+<section id="tecnologia">
+  <h2>Lo que ya existe en el mundo y lo que tomamos de ahí</h2>
+  <div class="referentes">
+    <article>
+      <h3>Darling Ingredients (DAR PRO), US 12,038,316 B2</h3>
+      <span class="suave chico">Patente concedida en 2024, vigente en EUA</span>
+      <p>Sensor de nivel en el tanque y una válvula que solo abre ante la baliza del camión autorizado. Tomamos la idea de validar cada entrega: aquí la llave es el QR del bote.</p>
+    </article>
+    <article>
+      <h3>Compology, US 11,610,185 B2</h3>
+      <span class="suave chico">Patente concedida en 2023; no entró a fase nacional en México</span>
+      <p>Decide qué contenedores vaciar por volumen y después enruta el camión. Tomamos el despacho por umbral: la ruta sale cuando la colonia junta 20 L.</p>
+    </article>
+    <article>
+      <h3>Mahoney Environmental (Neste)</h3>
+      <span class="suave chico">Recolector con licencia de la EPA desde 1953</span>
+      <p>Trazabilidad por cliente de cuánto aceite entrega y en qué se convierte. La replicamos con pesaje frente al comercio y comprobante.</p>
+    </article>
+    <article>
+      <h3>Waylet de Repsol</h3>
+      <span class="suave chico">Programa en estaciones de servicio de España</span>
+      <p>Escanea un QR y recibe 0.30 € por litro en su monedero. Aquí el incentivo es una transferencia tipo SPEI, sin monedero cerrado.</p>
+    </article>
+  </div>
+  <figure>
+    <img src="{{ url_for('static', filename='img/gartner.png') }}" alt="Curva de Gartner con las tecnologías del MVP" loading="lazy" width="2100" height="1125">
+    <figcaption>Madurez de las tecnologías del stack. El núcleo, el ruteo dinámico por umbral, ya está en la pendiente de la iluminación.</figcaption>
+  </figure>
+</section>
+
+<section id="ideacion">
+  <h2>Del papel a la pantalla</h2>
+  <p>Cada integrante dibujó ocho pantallas en ocho minutos; votamos las que resolvían un dolor real del comerciante y se podían demostrar en vivo.</p>
+  <div class="fotos">
+    {% for clave, titulo in [('hojas', 'Las cuatro hojas individuales'), ('matriz', 'Matriz Crazy 8’s integrada')] %}
+      {% if fotos[clave] %}
+      <figure><img src="{{ fotos[clave] }}" alt="{{ titulo }}" loading="lazy"><figcaption>{{ titulo }}</figcaption></figure>
+      {% else %}
+      <div class="foto-faltante">{{ titulo }}<br>Guarda la foto como static/img/crazy8/{{ clave }}.jpg</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <figure>
+    <img src="{{ url_for('static', filename='img/taskflow.png') }}" alt="Task Flow de ReAceite" loading="lazy">
+    <figcaption>Task Flow: nueve pantallas en tres carriles. Las decisiones del sistema no necesitan a ninguna persona.</figcaption>
+  </figure>
+</section>
+
+<section id="arquitectura">
+  <h2>Arquitectura del ecosistema</h2>
+  <figure>
+    <img src="{{ url_for('static', filename='img/stack.png') }}" alt="Tech Stack Map de ReAceite" loading="lazy">
+    <figcaption>Tech Stack Map en cuatro capas de arquitectura empresarial.</figcaption>
+  </figure>
+  <figure>
+    <img src="{{ url_for('static', filename='img/pipeline.png') }}" alt="Data Pipeline del pesaje al pago" loading="lazy">
+    <figcaption>Data Pipeline: del peso en la báscula a un pago liquidado, en segundos y sin captura manual.</figcaption>
+  </figure>
+</section>
+
+<section id="demo">
+  <h2>Demo en vivo</h2>
+  <div class="demo-qr">
+    <img src="{{ url_for('web.qr_app') }}" alt="QR para abrir ReAceite" width="600" height="600">
+    <div>
+      <p>Escanea el código con tu celular para registrar un comercio en tiempo real.</p>
+      <p><code>{{ url_app }}/</code></p>
+      <div class="acciones">
+        <a class="boton boton--aceite" href="{{ url_for('web.monitor') }}">Centro de control</a>
+        <a class="boton" href="{{ url_for('web.impacto') }}">Impacto del piloto</a>
+        <a class="boton" href="{{ url_for('web.recolector') }}">Ruta del día</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

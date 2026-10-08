@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Código no registrado · ReAceite{% endblock %}
+{% block contenido %}
+<h1>Este código no está registrado</h1>
+<p>El QR que escaneaste no corresponde a ningún comercio del piloto. Si es tu bote, regístralo y te damos un código nuevo.</p>
+<div class="acciones">
+  <a class="boton boton--aceite" href="{{ url_for('web.registro') }}">Registrar mi comercio</a>
+  <a class="boton" href="/">Ir al inicio</a>
+</div>
+{% endblock %}

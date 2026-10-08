@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Impacto del piloto · ReAceite{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">{% endblock %}
+{% block clase_main %}ancho{% endblock %}
+{% block contenido %}
+<div class="tablero">
+  <div class="tablero__cabeza">
+    <div>
+      <h1>Impacto del piloto</h1>
+      <span class="suave">Condesa, Hipódromo, Roma Norte y Escandón</span>
+    </div>
+    <span id="en-vivo" class="en-vivo" role="status">Conectando…</span>
+  </div>
+
+  <div class="cifras">
+    <div class="principal">
+      <div>
+        <span id="v-litros" class="valor">0.00</span>
+        <span class="unidad">litros de aceite fuera de la coladera</span><br>
+        <small id="v-recolecciones"></small>
+        <div id="cubetas-total" class="cubetas-total" aria-label="Cubetas de 20 litros recolectadas"></div>
+      </div>
+    </div>
+    <div class="agua">
+      <span id="v-agua" class="valor">0</span>
+      <span class="unidad">litros de agua protegida</span><br>
+      <small>1 L de aceite contamina 1,000 L de agua</small>
+    </div>
+    <div class="dinero">
+      <span id="v-pagado" class="valor">$0.00</span>
+      <span class="unidad">pagados a comercios</span><br>
+      <small id="v-pagos"></small>
+    </div>
+  </div>
+
+  <div class="cifras" style="grid-template-columns: 1fr">
+    <div>
+      <span class="unidad">Biocombustible estimado: </span><span id="v-bio" class="cifra" style="font-size:1.6rem">0.00</span><span class="unidad"> L</span>
+      <small> (0.9 L de combustible renovable por litro de aceite usado)</small>
+    </div>
+  </div>
+
+  <section>
+    <h2>Cubetas por colonia</h2>
+    <div id="zonas" class="zonas-grandes"></div>
+  </section>
+
+  <div class="dos-columnas">
+    <section>
+      <h2>Últimas recolecciones</h2>
+      <ul id="feed" class="feed"></ul>
+    </section>
+    <section>
+      <h2>Comercios del piloto</h2>
+      <div id="mapa-impacto" class="mapa mapa--alto"></div>
+      <p class="nota-datos">Puntos ámbar: comercios con solicitud abierta. Cuadro oscuro: centro de acopio.</p>
+    </section>
+  </div>
+  <p class="nota-datos">Incluye datos de prueba precargados para la demostración; los pagos se liquidan en un banco simulado.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/impacto.js') }}"></script>
+{% endblock %}

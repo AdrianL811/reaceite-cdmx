@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Pesar · {{ comercio.nombre }} · ReAceite{% endblock %}
+{% block contenido %}
+<div id="pantalla-pesar" data-token="{{ comercio.token }}">
+  <p class="suave"><a href="{{ url_for('web.recolector') }}">Ruta del día</a></p>
+  <div class="cabeza-comercio">
+    <div>
+      <h1>{{ comercio.nombre }}</h1>
+      <span class="suave">{{ comercio.codigo }}, {{ comercio.direccion }}</span>
+    </div>
+    <span class="etiqueta">{{ zonas[comercio.zona].nombre }}</span>
+  </div>
+  <p id="detalle-solicitud" class="mensaje mensaje--info">Cargando la solicitud…</p>
+  <div id="mensaje" hidden></div>
+
+  <form id="form-pesaje">
+    <label class="campo">
+      <span>Peso en la báscula</span>
+      <div class="peso">
+        <input id="peso" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-describedby="formula" required>
+        <span>kg</span>
+      </div>
+    </label>
+    <p id="aviso-tolerancia" class="mensaje mensaje--error" role="alert" hidden></p>
+    <table class="calculo" aria-label="Métricas Verdes calculadas al momento">
+      <tbody>
+        <tr><th>Litros <small id="formula">kg ÷ 0.92 kg/L</small></th><td id="c-litros">–</td></tr>
+        <tr class="agua"><th>Agua protegida <small>litros × 1,000</small></th><td id="c-agua">–</td></tr>
+        <tr><th>Biocombustible estimado <small>litros × 0.9</small></th><td id="c-bio">–</td></tr>
+        <tr><th>Pago bruto <small>litros × $6.00</small></th><td id="c-bruto">–</td></tr>
+        <tr><th>Comisión de la plataforma <small>10 % del bruto</small></th><td id="c-comision">–</td></tr>
+        <tr class="total"><th>Pago al comercio</th><td id="c-neto">–</td></tr>
+      </tbody>
+    </table>
+    <button id="confirmar" class="boton boton--aceite" type="submit" disabled>Confirmar recolección</button>
+  </form>
+
+  <section id="bloque-progreso" class="bloque" hidden aria-live="polite">
+    <h2>Del pesaje al pago</h2>
+    <ol id="progreso" class="progreso"></ol>
+    <div id="resultado" hidden></div>
+    <div id="siguientes" class="acciones bloque" hidden>
+      <button id="escanear-otro" class="boton boton--aceite" type="button">Escanear el siguiente bote</button>
+      <a class="boton" href="{{ url_for('web.recolector') }}">Volver a la ruta</a>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/pesar.js') }}"></script>{% endblock %}

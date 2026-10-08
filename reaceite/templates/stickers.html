@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block titulo %}Stickers QR · ReAceite{% endblock %}
+{% block clase_main %}ancho{% endblock %}
+{% block contenido %}
+<div class="no-imprimir">
+  <h1>Stickers para los botes</h1>
+  <p class="suave">Imprime en papel adhesivo o en hoja carta y protégelo con cinta. Cada QR abre la pantalla de su comercio.</p>
+  <button class="boton boton--aceite boton--chico" type="button" data-imprimir>Imprimir</button>
+  <hr class="separador">
+</div>
+<div class="stickers">
+  {% for c in comercios %}
+  <div class="sticker">
+    <img src="{{ url_for('web.qr_comercio', token=c.token) }}" alt="QR de {{ c.nombre }}" width="300" height="300">
+    <div>
+      <b>{{ c.nombre }}</b>
+      <small>{{ c.codigo }}, {{ zonas[c.zona].nombre }}</small>
+      <p>Escanéame para pedir que recojan tu aceite.</p>
+      <small>ReAceite CDMX</small>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/comun.js') }}"></script><script src="{{ url_for('static', filename='js/imprimir.js') }}"></script>{% endblock %}

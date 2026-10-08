@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar · ReAceite{% endblock %}
+{% block contenido %}
+<h1>Entrar como recolector</h1>
+<p class="suave">Con tu sesión abierta puedes ver las rutas, pesar el aceite y confirmar pagos.</p>
+{% if error %}<div class="mensaje mensaje--error" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="{{ url_for('auth.login') }}">
+  <input type="hidden" name="siguiente" value="{{ siguiente }}">
+  <label class="campo">
+    <span>Usuario</span>
+    <input name="usuario" type="text" autocomplete="username" autocapitalize="none" required>
+  </label>
+  <label class="campo">
+    <span>Contraseña</span>
+    <input name="clave" type="password" autocomplete="current-password" required>
+  </label>
+  <button class="boton boton--petroleo" type="submit">Entrar</button>
+</form>
+{% endblock %}

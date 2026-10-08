@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}{{ comercio.nombre }} · ReAceite{% endblock %}
+{% block contenido %}
+<div id="pantalla-comercio" data-token="{{ comercio.token }}" data-franja="{{ comercio.franja }}"
+     data-precio="{{ parametros.precio_litro }}" data-comision="{{ parametros.comision }}"
+     data-agua="{{ parametros.agua_por_litro }}" data-tope="{{ parametros.tope_ruta_litros }}">
+
+  {% if usuario %}
+  <div class="banner-recolector">
+    <span>Tienes la sesión de recolector abierta.</span>
+    <a class="boton boton--aceite" href="{{ url_for('web.pesar', token=comercio.token) }}">Pesar este bote</a>
+  </div>
+  {% endif %}
+
+  <div class="cabeza-comercio">
+    <div>
+      <h1>{{ comercio.nombre }}</h1>
+      <span class="suave">{{ comercio.codigo }}, {{ comercio.tipo|lower }}</span>
+    </div>
+    <span class="etiqueta">{{ zonas[comercio.zona].nombre }}</span>
+  </div>
+
+  <section class="zona-panel superficie" aria-labelledby="zona-cifra">
+    <div id="cubeta-zona"></div>
+    <div class="zona-panel__texto">
+      <span id="zona-cifra" class="cifra">…</span>
+      <p id="zona-texto" class="suave">Cargando tu zona…</p>
+    </div>
+  </section>
+
+  <div id="mensaje" class="bloque" hidden></div>
+
+  <section id="bloque-pedir" class="bloque">
+    <h2 class="pregunta">¿Cuánto aceite tienes?</h2>
+    <div class="litros" data-grupo="litros" role="group" aria-label="Litros de aceite">
+      {% for l in litros_opciones %}
+      <button type="button" data-valor="{{ l }}" data-litros="{{ l }}" aria-pressed="false"><span><b>{{ l }}</b><small>litros</small></span></button>
+      {% endfor %}
+    </div>
+    <h2 class="pregunta" style="margin-top:1.4rem">¿A qué hora te queda?</h2>
+    <div class="chips" data-grupo="franja" role="group" aria-label="Horario">
+      {% for clave, texto in franjas.items() %}<button type="button" class="chip" data-valor="{{ clave }}" aria-pressed="false">{{ texto }}</button>{% endfor %}
+    </div>
+    <p id="estimado" class="estimado" aria-live="polite"></p>
+    <button id="pedir" class="boton boton--aceite" type="button" disabled>Pedir recolección</button>
+  </section>
+
+  <section id="bloque-estado" class="bloque" hidden>
+    <h2>Tu recolección</h2>
+    <ol id="pasos" class="pasos"></ol>
+    <button id="cancelar" class="boton boton--chico" type="button" hidden style="margin-top:1rem">Cancelar solicitud</button>
+  </section>
+
+  <section id="comprobante" class="bloque" hidden></section>
+
+  <section class="bloque">
+    <h2>Lo que llevas con ReAceite</h2>
+    <div class="totales">
+      <div><span id="total-litros" class="cifra">…</span><small>entregados</small></div>
+      <div class="agua"><span id="total-agua" class="cifra">…</span><small>de agua protegida</small></div>
+      <div><span id="total-cobrado" class="cifra">…</span><small>cobrados</small></div>
+    </div>
+  </section>
+
+  <section class="bloque">
+    <h2>Historial</h2>
+    <ul id="historial" class="historial"></ul>
+    <p id="sin-historial" class="vacio" hidden>Aquí verás cada recolección con su pago.</p>
+    <p id="actualizado" class="suave chico"></p>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/comercio.js') }}"></script>{% endblock %}

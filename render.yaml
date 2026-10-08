@@ -1,0 +1,19 @@
+# Blueprint de Render: crea el servicio web gratuito a partir del Dockerfile.
+services:
+  - type: web
+    name: reaceite-cdmx
+    runtime: docker
+    plan: free
+    healthCheckPath: /salud
+    autoDeploy: true
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: SPEI_API_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: RECOLECTOR_PASSWORD
+        value: aceite2026

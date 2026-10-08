@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block titulo %}QR de la portada · ReAceite{% endblock %}
+{% block contenido %}
+<div class="portada-qr">
+  <h1>QR de la portada</h1>
+  <img src="{{ url_for('web.qr_app') }}" alt="Código QR de la PWA ReAceite" width="600" height="600">
+  <code>{{ url_app }}/</code>
+  <p class="suave">PNG de 1200 × 1200 px con corrección de errores alta. Insértalo de 6 × 6 cm al centro de la portada del reporte.</p>
+  <a class="boton boton--aceite" href="{{ url_for('web.qr_app', descargar=1) }}">Descargar PNG</a>
+</div>
+{% endblock %}

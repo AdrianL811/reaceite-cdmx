@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}Registra tu comercio · ReAceite{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">{% endblock %}
+{% block contenido %}
+<h1>Registra tu comercio</h1>
+<p class="suave">Solo lo necesario para pasar por tu aceite. Toma menos de un minuto.</p>
+<div id="mensaje" hidden></div>
+
+<form id="form-registro" novalidate>
+  <label class="campo">
+    <span>Nombre del negocio</span>
+    <input id="nombre" type="text" maxlength="60" autocomplete="organization" required placeholder="Por ejemplo, Tacos El Güero">
+  </label>
+
+  <fieldset class="campo">
+    <legend>Tipo de negocio</legend>
+    <div class="chips" data-grupo="tipo">
+      {% for t in tipos %}<button type="button" class="chip" data-valor="{{ t }}" aria-pressed="false">{{ t }}</button>{% endfor %}
+    </div>
+  </fieldset>
+
+  <label class="campo">
+    <span>Dirección</span>
+    <input id="direccion" type="text" maxlength="120" autocomplete="street-address" required placeholder="Calle y número">
+  </label>
+
+  <div class="campo">
+    <span>Ubicación del puesto</span>
+    <button id="usar-ubicacion" class="boton" type="button">Usar mi ubicación</button>
+    <small id="ubicacion-texto" role="status">Con tu ubicación calculamos la ruta del recolector.</small>
+    <div id="mapa-registro" class="mapa" hidden></div>
+  </div>
+
+  <label class="campo">
+    <span>Colonia</span>
+    <select id="zona">
+      {% for clave, z in zonas.items() %}<option value="{{ clave }}">{{ z.nombre }}</option>{% endfor %}
+    </select>
+  </label>
+
+  <fieldset class="campo">
+    <legend>¿A qué hora te queda mejor que pasemos?</legend>
+    <div class="chips" data-grupo="franja">
+      {% for clave, texto in franjas.items() %}<button type="button" class="chip" data-valor="{{ clave }}" aria-pressed="false">{{ texto }}</button>{% endfor %}
+    </div>
+  </fieldset>
+
+  <label class="campo">
+    <span>Teléfono (opcional)</span>
+    <input id="telefono" type="tel" inputmode="numeric" maxlength="14" autocomplete="tel" placeholder="10 dígitos">
+    <small>Solo para avisarte si el recolector no encuentra tu puesto.</small>
+  </label>
+
+  <p class="suave chico">En el piloto usamos una cuenta bancaria simulada: no te pedimos datos bancarios.</p>
+  <button id="registrar" class="boton boton--aceite" type="submit">Registrar comercio</button>
+</form>
+
+<section id="registro-listo" class="bloque" hidden>
+  <h2 id="listo-nombre"></h2>
+  <p id="listo-codigo"></p>
+  <div class="portada-qr">
+    <div id="listo-qr"></div>
+    <p>Imprime este código y pégalo en tu bote. Cada vez que lo escanees podrás pedir tu recolección.</p>
+  </div>
+  <div class="acciones">
+    <a id="listo-pedir" class="boton boton--aceite" href="#">Pedir mi primera recolección</a>
+    <a id="listo-descargar" class="boton" href="#">Descargar el QR</a>
+  </div>
+</section>
+<script type="application/json" id="datos-zonas">{{ zonas|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/registro.js') }}"></script>
+{% endblock %}

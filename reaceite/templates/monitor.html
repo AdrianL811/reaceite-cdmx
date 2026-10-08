@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}Centro de control · ReAceite{% endblock %}
+{% block clase_main %}ancho{% endblock %}
+{% block contenido %}
+<div class="tablero">
+  <div class="tablero__cabeza">
+    <div>
+      <h1>Centro de control</h1>
+      <span class="suave">Cada paso automático del sistema, en el momento en que ocurre</span>
+    </div>
+    <span id="en-vivo" class="en-vivo" role="status">Conectando…</span>
+  </div>
+  <div id="mensaje" hidden></div>
+
+  <section aria-live="polite">
+    <div class="pipeline-cabeza">
+      <h2 id="pipeline-titulo">Data Pipeline</h2>
+      <span id="pipeline-total" class="cifra"></span>
+    </div>
+    <ol id="pipeline" class="pipeline"></ol>
+  </section>
+
+  <div class="monitor">
+    <section>
+      <h2>Bitácora de eventos</h2>
+      <p class="suave chico">Toca un evento para ver los datos exactos que viajaron, incluidos los cuerpos JSON de la API y del webhook.</p>
+      <ol id="bitacora" class="bitacora"></ol>
+    </section>
+    <aside class="panel-lateral">
+      <section class="superficie">
+        <h3>Pagos</h3>
+        <table class="tabla"><thead><tr><th>Folio</th><th>Estatus</th><th>Monto</th><th>Clave de rastreo</th></tr></thead><tbody id="tabla-pagos"></tbody></table>
+      </section>
+      <section class="superficie">
+        <h3>Banco simulado (API SPEI)</h3>
+        <table class="tabla"><thead><tr><th>Orden</th><th>Referencia</th><th>Estatus</th><th>Webhook</th></tr></thead><tbody id="tabla-banco"></tbody></table>
+        <p id="cola" class="suave chico" style="margin:.75rem 0 0"></p>
+      </section>
+      <section class="superficie">
+        <h3>Atajos</h3>
+        <div class="acciones">
+          <a class="boton boton--chico" href="{{ url_for('web.impacto') }}" target="_blank" rel="noopener">Impacto del piloto</a>
+          <a class="boton boton--chico" href="{{ url_for('web.recolector') }}">Ruta del día</a>
+          <a class="boton boton--chico" href="{{ url_for('web.proyecto') }}">Presentación del proyecto</a>
+          {% if usuario and usuario.rol == 'admin' %}
+          <a class="boton boton--chico" href="{{ url_for('web.stickers') }}">Imprimir stickers QR</a>
+          <a class="boton boton--chico" href="{{ url_for('web.portada') }}">QR de la portada</a>
+          <button id="restablecer" class="boton boton--chico" type="button">Restablecer datos de demostración</button>
+          {% endif %}
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/monitor.js') }}"></script>{% endblock %}

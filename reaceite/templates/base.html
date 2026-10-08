@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block titulo %}ReAceite CDMX{% endblock %}</title>
+  <meta name="description" content="Recolección de aceite de cocina usado en la Ciudad de México, con pesaje frente al comercio y pago inmediato.">
+  <meta name="theme-color" content="#12383d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ReAceite">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="{{ url_for('static', filename='icons/favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ url_for('static', filename='icons/favicon-32.png') }}" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="preload" href="{{ url_for('static', filename='fonts/atkinson.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/bricolage.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block clase_body %}{% endblock %}">
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="barra">
+    <a class="marca" href="/" aria-label="ReAceite CDMX, inicio">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M5.4 13 C 5.4 1.2, 26.6 1.2, 26.6 13" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><rect x="12.6" y="2.2" width="6.8" height="2.6" rx="1.3" fill="#fff"/>
+        <path d="M4.5 10 h23 l-2.6 17.5 q-.3 1.8 -2.1 1.8 h-13.6 q-1.8 0 -2.1 -1.8 z" fill="#fff"/>
+        <path d="M5.6 17 q2.6 -1.6 5.2 0 t5.2 0 t5.2 0 t5.2 0 L24.8 27.3 q-.25 1.6 -1.9 1.6 h-13.8 q-1.65 0 -1.9 -1.6 Z" fill="#e8a11a"/>
+      </svg>
+      <span>ReAceite</span>
+    </a>
+    <div class="barra__extra">
+      {% block barra %}
+      {% if usuario %}
+        <span>{{ usuario.nombre }}</span>
+        <form method="post" action="{{ url_for('auth.logout') }}"><button class="enlace-boton" type="submit">Salir</button></form>
+      {% endif %}
+      {% endblock %}
+    </div>
+  </header>
+  <p class="aviso-red" id="aviso-red" role="status" hidden>Sin conexión. Revisa tus datos móviles o el wifi.</p>
+  <main id="principal" class="{% block clase_main %}contenido{% endblock %}">
+    {% block contenido %}{% endblock %}
+  </main>
+  {% block scripts %}<script type="module" src="{{ url_for('static', filename='js/comun.js') }}"></script>{% endblock %}
+</body>
+</html>
