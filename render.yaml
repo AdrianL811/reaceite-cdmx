@@ -13,6 +13,8 @@ services:
         generateValue: true
       - key: SPEI_API_KEY
         generateValue: true
+      - key: IOT_SECRET
+        generateValue: true
       - key: ADMIN_PASSWORD
         sync: false
       - key: RECOLECTOR_PASSWORD
