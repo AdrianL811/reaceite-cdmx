@@ -1,6 +1,6 @@
 // Service worker de ReAceite CDMX: hace la app instalable y la deja abrir sin señal.
 // La API nunca se guarda en caché: los datos siempre vienen frescos del servidor.
-const VERSION = "reaceite-v3";
+const VERSION = "reaceite-v5";
 const PRECARGA = [
   "/offline",
   "/static/css/app.css",
@@ -25,7 +25,9 @@ self.addEventListener("activate", (evento) => {
 });
 
 function guardar(peticion, respuesta) {
-  if (respuesta && respuesta.ok && respuesta.type === "basic") {
+  // Las páginas con datos de una cuenta llegan con «no-store»: no se guardan en el teléfono.
+  const privada = respuesta && /no-store/.test(respuesta.headers.get("Cache-Control") || "");
+  if (respuesta && respuesta.ok && respuesta.type === "basic" && !privada) {
     const copia = respuesta.clone();
     caches.open(VERSION).then((cache) => cache.put(peticion, copia));
   }
@@ -36,7 +38,7 @@ self.addEventListener("fetch", (evento) => {
   const peticion = evento.request;
   const url = new URL(peticion.url);
   if (peticion.method !== "GET" || url.origin !== self.location.origin) return;
-  if (/^\/(api|sim-spei|webhooks|qr|salir|entrar|salud)\b/.test(url.pathname)) return;
+  if (/^\/(api|sim-spei|webhooks|iot|qr|salir|entrar|comercio\/entrar|mi-comercio|salud)\b/.test(url.pathname)) return;
 
   // Archivos estáticos: se sirven al instante desde caché y se actualizan en segundo plano.
   if (url.pathname.startsWith("/static/")) {

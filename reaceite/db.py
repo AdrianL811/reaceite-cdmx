@@ -39,7 +39,16 @@ CREATE TABLE IF NOT EXISTS comercio (
     agua_l INTEGER NOT NULL DEFAULT 0,
     cobrado_cent INTEGER NOT NULL DEFAULT 0,
     demo INTEGER NOT NULL DEFAULT 0,
-    creado TEXT NOT NULL
+    creado TEXT NOT NULL,
+    -- Cuenta del comercio: usuario = telefono, contraseña = PIN de 6 dígitos (solo se guarda su hash).
+    pin_hash TEXT,
+    pin_temporal INTEGER NOT NULL DEFAULT 0,
+    intentos_pin INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta TEXT,
+    -- Cambia al cambiar el PIN o al reiniciar la base: invalida las sesiones anteriores.
+    sesion_sal TEXT,
+    -- Momento en que el comercio confirmó que pegó su QR en el bote.
+    qr_confirmado TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ruta (
@@ -89,7 +98,10 @@ CREATE TABLE IF NOT EXISTS recoleccion (
     comision_cent INTEGER NOT NULL,
     neto_cent INTEGER NOT NULL,
     anomalia TEXT,
-    creado TEXT NOT NULL
+    creado TEXT NOT NULL,
+    origen TEXT NOT NULL DEFAULT 'RUTA',
+    contenedor_id INTEGER,
+    lote_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS pago (
@@ -155,12 +167,98 @@ CREATE TABLE IF NOT EXISTS spei_orden (
     webhook_proximo TEXT,
     respuesta TEXT NOT NULL,
     creado TEXT NOT NULL,
-    liquidado TEXT
+    liquidado TEXT,
+    clabe_origen TEXT
+);
+
+-- Sprint 3: pasarela de pagos simulada (cuentas con saldo y movimientos).
+CREATE TABLE IF NOT EXISTS cuenta (
+    id INTEGER PRIMARY KEY,
+    clabe TEXT NOT NULL UNIQUE,
+    titular TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('FONDO', 'BILLETERA', 'PLANTA')),
+    celular TEXT,
+    saldo_cent INTEGER NOT NULL DEFAULT 0 CHECK (saldo_cent >= 0),
+    creado TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS movimiento (
+    id INTEGER PRIMARY KEY,
+    cuenta_id INTEGER NOT NULL REFERENCES cuenta(id),
+    tipo TEXT NOT NULL CHECK (tipo IN ('ABONO', 'CARGO')),
+    monto_cent INTEGER NOT NULL CHECK (monto_cent > 0),
+    saldo_cent INTEGER NOT NULL,
+    concepto TEXT NOT NULL,
+    referencia TEXT,
+    orden TEXT,
+    creado TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_movimiento_cuenta ON movimiento(cuenta_id, id);
+
+-- Sprint 3: contenedores inteligentes (báscula IoT) y depósitos.
+CREATE TABLE IF NOT EXISTS contenedor (
+    id INTEGER PRIMARY KEY,
+    codigo TEXT NOT NULL UNIQUE,
+    token TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    direccion TEXT NOT NULL,
+    zona TEXT NOT NULL,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    capacidad_l INTEGER NOT NULL,
+    nivel_cl INTEGER NOT NULL DEFAULT 0,
+    peso_g INTEGER NOT NULL DEFAULT 0,
+    secreto TEXT NOT NULL,
+    firmware TEXT,
+    ultima_senal TEXT,
+    alerta TEXT,
+    creado TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deposito (
+    id INTEGER PRIMARY KEY,
+    folio TEXT NOT NULL UNIQUE,
+    contenedor_id INTEGER NOT NULL REFERENCES contenedor(id),
+    comercio_id INTEGER NOT NULL REFERENCES comercio(id),
+    estado TEXT NOT NULL CHECK (estado IN ('ABIERTO', 'CERRADO', 'CANCELADO', 'VENCIDO')),
+    peso_inicial_g INTEGER NOT NULL,
+    peso_actual_g INTEGER NOT NULL,
+    peso_neto_g INTEGER,
+    recoleccion_id INTEGER REFERENCES recoleccion(id),
+    motivo TEXT,
+    abierto TEXT NOT NULL,
+    vence TEXT NOT NULL,
+    cerrado TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_deposito_abierto ON deposito(contenedor_id) WHERE estado = 'ABIERTO';
+
+CREATE TABLE IF NOT EXISTS lectura (
+    id INTEGER PRIMARY KEY,
+    contenedor_id INTEGER NOT NULL REFERENCES contenedor(id),
+    evento_id TEXT NOT NULL UNIQUE,
+    tipo TEXT NOT NULL,
+    peso_g INTEGER,
+    cuerpo TEXT NOT NULL,
+    recibido TEXT NOT NULL
+);
+
+-- Sprint 3: lotes vendidos a la planta de biocombustible.
+CREATE TABLE IF NOT EXISTS lote (
+    id INTEGER PRIMARY KEY,
+    folio TEXT NOT NULL UNIQUE,
+    planta TEXT NOT NULL,
+    litros_cl INTEGER NOT NULL,
+    recolecciones INTEGER NOT NULL,
+    precio_cent INTEGER NOT NULL,
+    venta_cent INTEGER NOT NULL,
+    costo_cent INTEGER NOT NULL,
+    creado TEXT NOT NULL
 );
 """
 
 TABLAS_EN_ORDEN_DE_BORRADO = (
-    "evento", "outbox", "spei_orden", "pago", "recoleccion", "solicitud", "ruta", "comercio", "usuario", "meta",
+    "evento", "outbox", "movimiento", "cuenta", "lectura", "deposito", "spei_orden", "pago", "recoleccion", "lote",
+    "contenedor", "solicitud", "ruta", "comercio", "usuario", "meta",
 )
 
 
@@ -223,8 +321,40 @@ def transaccion(conn):
         conn.execute("COMMIT")
 
 
+COLUMNAS_NUEVAS = {
+    "comercio": (
+        ("pin_hash", "TEXT"),
+        ("pin_temporal", "INTEGER NOT NULL DEFAULT 0"),
+        ("intentos_pin", "INTEGER NOT NULL DEFAULT 0"),
+        ("bloqueado_hasta", "TEXT"),
+        ("sesion_sal", "TEXT"),
+        ("qr_confirmado", "TEXT"),
+    ),
+    "recoleccion": (
+        ("origen", "TEXT NOT NULL DEFAULT 'RUTA'"),
+        ("contenedor_id", "INTEGER"),
+        ("lote_id", "INTEGER"),
+    ),
+    "spei_orden": (
+        ("clabe_origen", "TEXT"),
+    ),
+}
+
+
 def crear_esquema(conn):
     conn.executescript(ESQUEMA)
+    # Bases creadas con una versión anterior: se agregan las columnas que falten.
+    for tabla, columnas in COLUMNAS_NUEVAS.items():
+        existentes = {fila["name"] for fila in conn.execute(f"PRAGMA table_info({tabla})")}
+        for nombre, tipo in columnas:
+            if nombre not in existentes:
+                conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_comercio_telefono ON comercio(telefono) "
+                     "WHERE telefono IS NOT NULL")
+    except sqlite3.IntegrityError:
+        # Una base vieja con teléfonos repetidos: la unicidad la sigue revisando cuentas.py.
+        pass
 
 
 def vaciar(conn):

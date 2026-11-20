@@ -1,4 +1,4 @@
-import { $, $$, api, datosJSON, el, miComercio, mostrarMensaje } from "./comun.js";
+import { $, $$, api, datosJSON, el, mostrarMensaje } from "./comun.js";
 import { crearMapa } from "./mapa.js";
 
 const zonas = datosJSON("datos-zonas");
@@ -61,6 +61,16 @@ formulario.addEventListener("submit", async (e) => {
     mostrarMensaje(mensaje, "Elige el tipo de negocio.", "error");
     return;
   }
+  if (!/^\d{6}$/.test($("#pin").value)) {
+    mostrarMensaje(mensaje, "Tu PIN debe tener exactamente 6 números.", "error");
+    $("#pin").focus();
+    return;
+  }
+  if ($("#pin").value !== $("#pin2").value) {
+    mostrarMensaje(mensaje, "Los dos PIN no coinciden. Escríbelo igual en ambos campos.", "error");
+    $("#pin2").focus();
+    return;
+  }
   const boton = $("#registrar");
   boton.disabled = true;
   boton.textContent = "Registrando…";
@@ -71,6 +81,8 @@ formulario.addEventListener("submit", async (e) => {
         nombre: $("#nombre").value,
         tipo: estado.tipo,
         telefono: $("#telefono").value,
+        pin: $("#pin").value,
+        pin2: $("#pin2").value,
         direccion: $("#direccion").value,
         zona: $("#zona").value,
         franja: estado.franja,
@@ -78,17 +90,26 @@ formulario.addEventListener("submit", async (e) => {
         lon: estado.lon,
       },
     });
-    miComercio.guardar(c);
     formulario.hidden = true;
+    $("#titulo-registro").textContent = "Tu comercio quedó registrado";
+    $("#intro-registro").hidden = true;
     const listo = $("#registro-listo");
-    $("#listo-nombre").textContent = `Listo, ${c.nombre} ya está registrado`;
-    $("#listo-codigo").textContent = `Tu código es ${c.codigo} y tu colonia, ${c.zona.nombre}.`;
-    const imagen = el("img", { src: `/qr/c/${encodeURIComponent(c.token)}.png`, alt: `Código QR de ${c.nombre}`, width: 260, height: 260 });
+    const panel = `/c/${encodeURIComponent(c.token)}`;
+    $("#listo-nombre").textContent = `Listo, ${c.nombre} ya está registrado. Tu usuario es tu celular ${c.telefono}.`;
+    $("#listo-codigo").textContent = `Código ${c.codigo}, colonia ${c.zona.nombre}.`;
+    const imagen = el("img", { src: c.qr.imagen, alt: `Código QR de ${c.nombre}`, width: 260, height: 260 });
     $("#listo-qr").replaceChildren(imagen);
-    $("#listo-pedir").href = `/c/${encodeURIComponent(c.token)}`;
-    $("#listo-descargar").href = `/qr/c/${encodeURIComponent(c.token)}.png?descargar=1`;
+    $("#listo-descargar").href = c.qr.descargar;
+    $("#listo-despues").href = panel;
+    $("#listo-pegado").addEventListener("click", async () => {
+      try {
+        await api("/api/mi-comercio/qr/confirmar", { metodo: "POST", datos: {} });
+      } finally {
+        window.location.href = panel;
+      }
+    });
     listo.hidden = false;
-    listo.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
     mostrarMensaje(mensaje, error.message, "error");
     mensaje.scrollIntoView({ behavior: "smooth", block: "center" });

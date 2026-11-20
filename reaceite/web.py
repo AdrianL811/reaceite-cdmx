@@ -2,11 +2,11 @@
 import json
 import os
 
-from flask import (Blueprint, Response, abort, current_app, jsonify, render_template, request, send_from_directory,
-                   url_for)
+from flask import (Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request,
+                   send_from_directory, url_for)
 
-from . import qr, servicios, vistas
-from .auth import requiere, usuario_actual
+from . import cuentas, qr, servicios, vistas
+from .auth import comercio_actual, requiere, requiere_comercio, usuario_actual
 from .config import FRANJAS, LITROS_OPCIONES, TIPOS_COMERCIO, ZONAS
 from .db import get_db
 
@@ -20,7 +20,8 @@ def url_publica():
 
 @bp.app_context_processor
 def _contexto():
-    return {"usuario": usuario_actual(), "zonas": ZONAS, "franjas": FRANJAS, "parametros": vistas.parametros()}
+    return {"usuario": usuario_actual(), "comercio_sesion": comercio_actual(), "zonas": ZONAS, "franjas": FRANJAS,
+            "parametros": vistas.parametros(), "formato_telefono": cuentas.formato_telefono}
 
 
 @bp.get("/")
@@ -30,15 +31,38 @@ def inicio():
 
 @bp.get("/registro")
 def registro():
+    propio = comercio_actual()
+    if propio is not None:
+        return redirect(url_for("web.comercio", token=propio["token"]))
     return render_template("registro.html", tipos=TIPOS_COMERCIO)
 
 
 @bp.get("/c/<token>")
 def comercio(token):
+    """El QR del bote. Lo que se abre depende de quién lo escanea:
+    el recolector va directo al pesaje, el dueño ve su panel y cualquier otra persona, una vista pública.
+    """
     c = servicios.comercio_por_token(get_db(), token)
     if c is None:
         return render_template("qr_desconocido.html"), 404
-    return render_template("comercio.html", comercio=c, litros_opciones=LITROS_OPCIONES)
+    if usuario_actual() is not None:
+        return redirect(url_for("web.pesar", token=c["token"]))
+    propio = comercio_actual()
+    if propio is not None and propio["id"] == c["id"]:
+        return render_template("comercio.html", comercio=c, litros_opciones=LITROS_OPCIONES)
+    return render_template("comercio_publico.html", comercio=c, otro=propio)
+
+
+@bp.get("/mi-comercio")
+@requiere_comercio
+def mi_comercio():
+    return redirect(url_for("web.comercio", token=comercio_actual()["token"]))
+
+
+@bp.get("/mi-comercio/sticker")
+@requiere_comercio
+def mi_sticker():
+    return render_template("mi_sticker.html", comercio=comercio_actual())
 
 
 @bp.get("/r")
@@ -144,6 +168,7 @@ def manifiesto():
              "purpose": "maskable"},
         ],
         "shortcuts": [
+            {"name": "Mi comercio", "url": "/mi-comercio"},
             {"name": "Soy recolector", "url": "/r"},
             {"name": "Impacto del piloto", "url": "/impacto"},
         ],

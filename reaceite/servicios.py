@@ -11,22 +11,14 @@ from datetime import timedelta
 from decimal import Decimal
 
 from . import clabe as clabe_mod
-from . import eventos, metricas, rutas
+from . import cuentas, eventos, metricas, rutas, spei_sim
 from .config import FRANJAS, LITROS_OPCIONES, PARAMETROS, TIPOS_COMERCIO, TZ, ZONAS
 from .db import ahora_iso, ahora_utc, iso, parse_iso, siguiente_numero
+from .errores import ErrorNegocio  # noqa: F401  (se reexporta: api.py y las pruebas lo importan de aquí)
 
 ALFABETO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 CDMX_LAT = (19.0, 19.8)
 CDMX_LON = (-99.5, -98.8)
-
-
-class ErrorNegocio(Exception):
-    def __init__(self, mensaje, codigo="invalido", http=400, extra=None):
-        super().__init__(mensaje)
-        self.mensaje = mensaje
-        self.codigo = codigo
-        self.http = http
-        self.extra = extra or {}
 
 
 # ---------------------------------------------------------------- utilidades
@@ -69,14 +61,15 @@ def solicitud_abierta(conn, comercio_id):
 
 
 # ---------------------------------------------------------------- comercios
-def crear_comercio(conn, datos, demo=False, token=None, creado=None):
+def crear_comercio(conn, datos, demo=False, token=None, creado=None, pin_hash=None, sal=None):
+    """Da de alta el comercio y su cuenta (celular + PIN).
+
+    Los comercios de demostración llegan con el hash del PIN y la sal ya calculados (seed.py).
+    """
     nombre = _texto(datos.get("nombre"), 2, 60, "el nombre del negocio")
     tipo = datos.get("tipo")
     if tipo not in TIPOS_COMERCIO:
         raise ErrorNegocio("Elige el tipo de negocio.")
-    telefono = re.sub(r"\D", "", str(datos.get("telefono") or ""))
-    if telefono and len(telefono) != 10:
-        raise ErrorNegocio("El teléfono debe tener 10 dígitos.")
     direccion = _texto(datos.get("direccion"), 4, 120, "la dirección (calle y número)")
     franja = datos.get("franja") or "10-12"
     if franja not in FRANJAS:
@@ -101,6 +94,14 @@ def crear_comercio(conn, datos, demo=False, token=None, creado=None):
     if zona not in ZONAS:
         raise ErrorNegocio("Elige una colonia del piloto.")
 
+    # La cuenta: el celular es el usuario y el PIN de 6 dígitos la contraseña (solo se guarda su hash).
+    telefono = cuentas.normalizar_telefono(datos.get("telefono"))
+    pin = None if pin_hash else cuentas.validar_pin_nuevo(datos.get("pin"), datos.get("pin2"), telefono)
+    if cuentas.comercio_por_telefono(conn, telefono):
+        raise ErrorNegocio("Ese celular ya tiene una cuenta. Entra con tu celular y tu PIN.",
+                           codigo="telefono_registrado", http=409)
+    pin_hash = pin_hash or cuentas.hash_pin(pin)
+
     numero = siguiente_numero(conn, "comercio")
     codigo = f"COM-{numero:04d}"
     if token is None:
@@ -111,9 +112,11 @@ def crear_comercio(conn, datos, demo=False, token=None, creado=None):
     creado = creado or ahora_iso()
     conn.execute(
         "INSERT INTO comercio(id, codigo, token, nombre, tipo, telefono, direccion, zona, franja, lat, lon, "
-        "clabe, demo, creado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (numero, codigo, token, nombre, tipo, telefono or None, direccion, zona, franja, round(lat, 6),
-         round(lon, 6), clabe, 1 if demo else 0, creado),
+        "clabe, demo, creado, pin_hash, sesion_sal, qr_confirmado) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (numero, codigo, token, nombre, tipo, telefono, direccion, zona, franja, round(lat, 6),
+         round(lon, 6), clabe, 1 if demo else 0, creado, pin_hash, sal or cuentas.nueva_sal(),
+         creado if demo else None),
     )
     if not demo:
         eventos.registrar(
@@ -123,7 +126,35 @@ def crear_comercio(conn, datos, demo=False, token=None, creado=None):
             detalle={"codigo": codigo, "zona": zona, "lat": round(lat, 6), "lon": round(lon, 6),
                      "clabe": clabe_mod.enmascarar(clabe)},
         )
+        # Su billetera ligada al celular se abre en la pasarela de pagos (en segundo plano, por la cola).
+        conn.execute(
+            "INSERT INTO outbox(tipo, ref, payload, estado, proximo, creado, actualizado) "
+            "VALUES ('billetera.abrir', ?, ?, 'PENDIENTE', ?, ?, ?)",
+            (codigo, json.dumps({"clabe": clabe, "titular": nombre, "celular": telefono, "referencia": codigo},
+                                ensure_ascii=False), creado, creado, creado),
+        )
     return conn.execute("SELECT * FROM comercio WHERE id = ?", (numero,)).fetchone()
+
+
+def confirmar_qr_pegado(conn, comercio):
+    """El comercio avisa que ya pegó su QR en el bote: deja de verse el recordatorio."""
+    if not comercio["qr_confirmado"]:
+        conn.execute("UPDATE comercio SET qr_confirmado = ? WHERE id = ?", (ahora_iso(), comercio["id"]))
+        eventos.registrar(conn, "comercio.qr_pegado", f"{comercio['codigo']} confirmó que su QR ya está en el bote",
+                          ref=comercio["codigo"])
+    return conn.execute("SELECT * FROM comercio WHERE id = ?", (comercio["id"],)).fetchone()
+
+
+def reemplazar_qr(conn, comercio):
+    """Nuevo token para el QR (si alguien más tiene una copia del sticker). El QR anterior deja de servir."""
+    token = token_aleatorio()
+    while conn.execute("SELECT 1 FROM comercio WHERE token = ?", (token,)).fetchone():
+        token = token_aleatorio()
+    conn.execute("UPDATE comercio SET token = ?, qr_confirmado = NULL WHERE id = ?", (token, comercio["id"]))
+    eventos.registrar(conn, "comercio.qr_reemplazado",
+                      f"{comercio['codigo']} reemplazó su QR; el sticker anterior dejó de funcionar",
+                      ref=comercio["codigo"])
+    return conn.execute("SELECT * FROM comercio WHERE id = ?", (comercio["id"],)).fetchone()
 
 
 # ---------------------------------------------------------------- zonas y rutas
@@ -271,16 +302,24 @@ def cancelar_solicitud(conn, comercio, folio):
 
 # ---------------------------------------------------------------- recolección y pago
 def confirmar_recoleccion(conn, comercio, recolector, peso_kg, confirmar_anomalia=False, crear_si_falta=False,
-                          webhook_url=None, creado=None):
+                          webhook_url=None, creado=None, contenedor=None, deposito=None):
+    """Registra el aceite pesado y encola su pago.
+
+    Dos orígenes: la RUTA (el recolector pesa frente al comercio y escanea el QR del bote) y el
+    CONTENEDOR inteligente (la báscula IoT reporta el peso con su firma; `contenedor` y `deposito`
+    traen los datos del dispositivo). En los dos casos el dato recorre las mismas 8 etapas.
+    """
     try:
         m = metricas.calcular(peso_kg)
     except metricas.PesoInvalido as e:
         raise ErrorNegocio(str(e), codigo="peso_invalido") from None
     creado = creado or ahora_iso()
-    sol = solicitud_abierta(conn, comercio["id"])
+    origen = "CONTENEDOR" if contenedor is not None else "RUTA"
+    # El depósito en un contenedor es una entrega directa: no depende de la solicitud de ruta.
+    sol = solicitud_abierta(conn, comercio["id"]) if origen == "RUTA" else None
     directa = False
     if sol is None:
-        if not crear_si_falta:
+        if not crear_si_falta and origen == "RUTA":
             raise ErrorNegocio(
                 f"{comercio['nombre']} no tiene una solicitud abierta.", codigo="sin_solicitud", http=409)
         numero = siguiente_numero(conn, "solicitud")
@@ -295,7 +334,7 @@ def confirmar_recoleccion(conn, comercio, recolector, peso_kg, confirmar_anomali
         directa = True
 
     maximo = (Decimal(sol["litros_estimados"]) * PARAMETROS["tolerancia_peso"]).quantize(Decimal("0.01"))
-    excede = metricas.excede_tolerancia(m["litros"], sol["litros_estimados"])
+    excede = origen == "RUTA" and metricas.excede_tolerancia(m["litros"], sol["litros_estimados"])
     if excede and not confirmar_anomalia:
         raise ErrorNegocio(
             f"{m['peso_kg']} kg equivalen a {m['litros']} L, más de 1.5 veces los "
@@ -311,11 +350,11 @@ def confirmar_recoleccion(conn, comercio, recolector, peso_kg, confirmar_anomali
                 f"{sol['litros_estimados']} L solicitados)") if excede else None
     conn.execute(
         "INSERT INTO recoleccion(id, folio, solicitud_id, comercio_id, recolector_id, peso_g, litros_cl, agua_l, "
-        "biocombustible_cl, bruto_cent, comision_cent, neto_cent, anomalia, creado) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "biocombustible_cl, bruto_cent, comision_cent, neto_cent, anomalia, creado, origen, contenedor_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (numero, folio, sol["id"], comercio["id"], recolector["id"] if recolector else None, e["peso_g"],
          e["litros_cl"], e["agua_l"], e["biocombustible_cl"], e["bruto_cent"], e["comision_cent"],
-         e["neto_cent"], anomalia, creado),
+         e["neto_cent"], anomalia, creado, origen, contenedor["id"] if contenedor is not None else None),
     )
     conn.execute("UPDATE solicitud SET estado = 'RECOLECTADA', actualizado = ? WHERE id = ?", (creado, sol["id"]))
     conn.execute(
@@ -338,7 +377,7 @@ def confirmar_recoleccion(conn, comercio, recolector, peso_kg, confirmar_anomali
         "monto": str(m["pago_neto"]),
         "clabe_destino": comercio["clabe"],
         "beneficiario": comercio["nombre"],
-        "concepto": f"Compra de {m['litros']} L de aceite usado ({folio})",
+        "concepto": f"Pago por {m['litros']} L de aceite usado ({folio})",
         "webhook_url": webhook_url,
     }
     conn.execute(
@@ -358,26 +397,44 @@ def confirmar_recoleccion(conn, comercio, recolector, peso_kg, confirmar_anomali
             ruta_completa = conn.execute("SELECT folio FROM ruta WHERE id = ?", (sol["ruta_id"],)).fetchone()[0]
 
     # Evidencia del Data Pipeline, etapas 1 a 5.
-    quien = recolector["nombre"] if recolector else "recolector"
-    eventos.registrar(
-        conn, "pesaje.capturado", f"QR {comercio['codigo']} escaneado; báscula: {m['peso_kg']} kg ({quien})",
-        ref=folio, etapa=1,
-        detalle={"comercio": comercio["codigo"], "peso_kg": str(m["peso_kg"]), "solicitud": sol["folio"],
-                 "recolector": quien, "recoleccion_directa": directa},
-    )
+    if origen == "CONTENEDOR":
+        eventos.registrar(
+            conn, "pesaje.capturado",
+            f"{contenedor['codigo']}: {comercio['codigo']} depositó; celda de carga {m['peso_kg']} kg "
+            f"(lectura firmada por el dispositivo)",
+            ref=folio, etapa=1,
+            detalle={"comercio": comercio["codigo"], "contenedor": contenedor["codigo"], "deposito": deposito,
+                     "peso_kg": str(m["peso_kg"])},
+        )
+    else:
+        quien = recolector["nombre"] if recolector else "recolector"
+        eventos.registrar(
+            conn, "pesaje.capturado", f"QR {comercio['codigo']} escaneado; báscula: {m['peso_kg']} kg ({quien})",
+            ref=folio, etapa=1,
+            detalle={"comercio": comercio["codigo"], "peso_kg": str(m["peso_kg"]), "solicitud": sol["folio"],
+                     "recolector": quien, "recoleccion_directa": directa},
+        )
     eventos.registrar(
         conn, "pesaje.normalizado", f"{m['peso_kg']} kg ÷ {PARAMETROS['densidad']} kg/L = {m['litros']} L",
         ref=folio, etapa=2,
         detalle={"formula": "litros = peso_kg / densidad", "densidad_kg_l": str(PARAMETROS["densidad"]),
                  "litros": str(m["litros"])},
     )
-    validaciones = [
-        f"QR {comercio['codigo']} registrado",
-        f"Solicitud {sol['folio']} abierta",
-        f"Peso dentro del rango 0.05 a 100 kg",
-        (f"{m['litros']} L dentro de la tolerancia (máximo {maximo} L)" if not excede
-         else f"{m['litros']} L excede {maximo} L: confirmado por el recolector"),
-    ]
+    if origen == "CONTENEDOR":
+        validaciones = [
+            f"Firma HMAC de {contenedor['codigo']} válida y evento no repetido",
+            f"Depósito {deposito['folio']} abierto por {comercio['codigo']} con su sesión",
+            "Peso dentro del rango 0.05 a 100 kg",
+            f"Cabe en el contenedor ({contenedor['capacidad_l']} L de capacidad)",
+        ]
+    else:
+        validaciones = [
+            f"QR {comercio['codigo']} registrado",
+            f"Solicitud {sol['folio']} abierta",
+            "Peso dentro del rango 0.05 a 100 kg",
+            (f"{m['litros']} L dentro de la tolerancia (máximo {maximo} L)" if not excede
+             else f"{m['litros']} L excede {maximo} L: confirmado por el recolector"),
+        ]
     eventos.registrar(
         conn, "pesaje.validado", "; ".join(validaciones), ref=folio, etapa=3,
         detalle={"validaciones": validaciones, "anomalia": anomalia},
@@ -437,6 +494,7 @@ def aplicar_liquidacion(conn, datos, firma_ok_detalle=None):
         (clave, datos.get("folio"), ahora, pago["id"]),
     )
     conn.execute("UPDATE comercio SET cobrado_cent = cobrado_cent + ? WHERE id = ?", (monto_cent, pago["comercio_id"]))
+    saldo = conn.execute("SELECT saldo_cent FROM cuenta WHERE clabe = ?", (pago["clabe"],)).fetchone()
     segundos = (parse_iso(ahora) - parse_iso(pago["rec_creado"])).total_seconds()
     eventos.registrar(
         conn, "spei.webhook_recibido",
@@ -446,10 +504,76 @@ def aplicar_liquidacion(conn, datos, firma_ok_detalle=None):
     )
     eventos.registrar(
         conn, "pago.liquidado",
-        f"{pago['folio']} LIQUIDADO: ${metricas.pesos(monto_cent)} a {pago['nombre']} "
+        f"{pago['folio']} LIQUIDADO: ${metricas.pesos(monto_cent)} en la billetera de {pago['nombre']} "
         f"({clabe_mod.enmascarar(pago['clabe'])}); del pesaje al pago en {segundos:.1f} s",
         ref=pago["rec_folio"], etapa=8,
         detalle={"pago": pago["folio"], "clave_rastreo": clave, "monto": metricas.pesos(monto_cent),
+                 "saldo_billetera": metricas.pesos(saldo[0]) if saldo else None,
                  "segundos_desde_pesaje": round(segundos, 2)},
     )
     return {"duplicado": False, "pago": conn.execute("SELECT * FROM pago WHERE id = ?", (pago["id"],)).fetchone()}
+
+
+# ---------------------------------------------------------------- venta de lotes a la planta
+def inventario(conn):
+    """Aceite recolectado que todavía no se vende: litros, costo pagado a los comercios y venta estimada."""
+    f = conn.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(r.litros_cl), 0) AS litros, COALESCE(SUM(r.neto_cent), 0) AS costo "
+        "FROM recoleccion r JOIN pago p ON p.recoleccion_id = r.id "
+        "WHERE r.lote_id IS NULL AND p.estatus = 'LIQUIDADO'"
+    ).fetchone()
+    precio_cent = int(PARAMETROS["precio_planta_litro"] * 100)
+    venta = (f["litros"] * precio_cent + 50) // 100
+    return {"recolecciones": f["n"], "litros_cl": f["litros"], "costo_cent": f["costo"], "venta_cent": venta,
+            "precio_cent": precio_cent}
+
+
+def vender_lote(conn, planta_nombre):
+    """Arma un lote con el aceite pagado y aún no vendido, y cobra a la planta: el dinero recarga el Fondo.
+
+    Solo entran recolecciones con el pago LIQUIDADO (el aceite ya es de ReAceite). Los pagos que
+    esperaban fondos se reactivan de inmediato.
+    """
+    inv = inventario(conn)
+    minimo_cl = PARAMETROS["lote_minimo_litros"] * 100
+    if inv["litros_cl"] < minimo_cl:
+        raise ErrorNegocio(
+            f"Hay {metricas.litros_txt(inv['litros_cl'])} L sin vender; la planta pide lotes de al menos "
+            f"{PARAMETROS['lote_minimo_litros']} L.", codigo="lote_insuficiente", http=409)
+    numero = siguiente_numero(conn, "lote")
+    folio = f"LOT-{numero:04d}"
+    ahora = ahora_iso()
+    conn.execute(
+        "INSERT INTO lote(id, folio, planta, litros_cl, recolecciones, precio_cent, venta_cent, costo_cent, creado) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (numero, folio, planta_nombre, inv["litros_cl"], inv["recolecciones"], inv["precio_cent"], inv["venta_cent"],
+         inv["costo_cent"], ahora),
+    )
+    conn.execute(
+        "UPDATE recoleccion SET lote_id = ? WHERE lote_id IS NULL AND id IN "
+        "(SELECT recoleccion_id FROM pago WHERE estatus = 'LIQUIDADO')", (numero,))
+    saldo = spei_sim.transferencia_interna(
+        conn, spei_sim.PLANTA_CLABE, spei_sim.FONDO_CLABE, inv["venta_cent"],
+        f"Venta {folio}: {metricas.litros_txt(inv['litros_cl'])} L a {planta_nombre}", folio, creado=ahora)
+    reactivados = conn.execute(
+        "UPDATE outbox SET proximo = ? WHERE estado = 'PENDIENTE' AND ultimo_error LIKE 'fondos_insuficientes%'",
+        (ahora,)).rowcount
+    margen = inv["venta_cent"] - inv["costo_cent"]
+    eventos.registrar(
+        conn, "lote.vendido",
+        f"{folio}: {metricas.litros_txt(inv['litros_cl'])} L de {inv['recolecciones']} recolecciones vendidos a "
+        f"{planta_nombre} a ${metricas.pesos(inv['precio_cent'])}/L = ${inv['venta_cent'] / 100:,.2f}",
+        ref=folio,
+        detalle={"litros": metricas.litros_txt(inv["litros_cl"]), "precio_litro": metricas.pesos(inv["precio_cent"]),
+                 "venta": metricas.pesos(inv["venta_cent"]), "costo_pagado_a_comercios": metricas.pesos(inv["costo_cent"]),
+                 "margen_bruto": metricas.pesos(margen)},
+    )
+    eventos.registrar(
+        conn, "fondo.recargado",
+        f"Fondo de Garantía de Dispersión recargado con ${inv['venta_cent'] / 100:,.2f}: saldo "
+        f"${saldo / 100:,.2f}" + (f"; {reactivados} pago(s) en espera se reactivan" if reactivados else ""),
+        ref=folio, detalle={"saldo": metricas.pesos(saldo), "pagos_reactivados": reactivados},
+    )
+    return {"folio": folio, "litros": metricas.litros_txt(inv["litros_cl"]), "recolecciones": inv["recolecciones"],
+            "venta": metricas.pesos(inv["venta_cent"]), "costo": metricas.pesos(inv["costo_cent"]),
+            "margen": metricas.pesos(margen), "saldo_fondo": metricas.pesos(saldo), "reactivados": reactivados}

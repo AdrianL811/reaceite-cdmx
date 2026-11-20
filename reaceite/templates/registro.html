@@ -2,8 +2,8 @@
 {% block titulo %}Registra tu comercio · ReAceite{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">{% endblock %}
 {% block contenido %}
-<h1>Registra tu comercio</h1>
-<p class="suave">Solo lo necesario para pasar por tu aceite. Toma menos de un minuto.</p>
+<h1 id="titulo-registro">Registra tu comercio</h1>
+<p id="intro-registro" class="suave">Solo lo necesario para pasar por tu aceite. Toma menos de un minuto.</p>
 <div id="mensaje" hidden></div>
 
 <form id="form-registro" novalidate>
@@ -45,27 +45,50 @@
     </div>
   </fieldset>
 
-  <label class="campo">
-    <span>Teléfono (opcional)</span>
-    <input id="telefono" type="tel" inputmode="numeric" maxlength="14" autocomplete="tel" placeholder="10 dígitos">
-    <small>Solo para avisarte si el recolector no encuentra tu puesto.</small>
-  </label>
+  <fieldset class="campo cuenta">
+    <legend>Tu cuenta</legend>
+    <p class="suave chico">Con tu celular y tu PIN entras a tu comercio desde cualquier teléfono, aunque se borre el navegador.</p>
+    <label class="campo">
+      <span>Tu celular (será tu usuario)</span>
+      <input id="telefono" type="tel" inputmode="numeric" maxlength="20" autocomplete="username" required placeholder="10 dígitos">
+    </label>
+    <label class="campo">
+      <span>Crea un PIN de 6 números</span>
+      <input id="pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required>
+      <small>No uses 123456, seis números iguales ni el final de tu celular.</small>
+    </label>
+    <label class="campo">
+      <span>Repite tu PIN</span>
+      <input id="pin2" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required>
+    </label>
+  </fieldset>
 
-  <p class="suave chico">En el piloto usamos una cuenta bancaria simulada: no te pedimos datos bancarios.</p>
+  <p class="suave chico">Aviso de privacidad: usamos tu celular solo para identificarte y avisarte de tus recolecciones; no lo compartimos con nadie. En el piloto la cuenta bancaria es simulada: no te pedimos datos bancarios.</p>
   <button id="registrar" class="boton boton--aceite" type="submit">Registrar comercio</button>
+  <p class="suave chico bloque">¿Ya tienes cuenta? <a href="{{ url_for('auth.login_comercio') }}">Entra con tu celular y PIN</a>.</p>
 </form>
 
 <section id="registro-listo" class="bloque" hidden>
-  <h2 id="listo-nombre"></h2>
-  <p id="listo-codigo"></p>
+  <div id="listo-nombre" class="mensaje mensaje--ok" role="status"></div>
+  <h2>Último paso: pega tu QR en el bote</h2>
+  <ol class="pasos-qr">
+    <li><b>Imprímelo</b> o descárgalo y llévalo a imprimir.</li>
+    <li><b>Pégalo en tu bote de aceite</b>, a la vista y donde no se moje.</li>
+    <li><b>El recolector lo escanea</b> cuando pasa: así registra tus litros y te paga al momento. Sin el QR en el bote no podemos registrar tu aceite.</li>
+  </ol>
   <div class="portada-qr">
     <div id="listo-qr"></div>
-    <p>Imprime este código y pégalo en tu bote. Cada vez que lo escanees podrás pedir tu recolección.</p>
+    <p id="listo-codigo" class="suave"></p>
   </div>
-  <div class="acciones">
-    <a id="listo-pedir" class="boton boton--aceite" href="#">Pedir mi primera recolección</a>
-    <a id="listo-descargar" class="boton" href="#">Descargar el QR</a>
+  <div class="acciones acciones--fila">
+    <a class="boton boton--aceite" href="{{ url_for('web.mi_sticker') }}">Imprimir sticker</a>
+    <a id="listo-descargar" class="boton" href="#" download>Descargar QR</a>
   </div>
+  <div class="acciones bloque">
+    <button id="listo-pegado" class="boton boton--petroleo" type="button">Ya lo pegué: ir a mi comercio</button>
+    <a id="listo-despues" class="boton" href="#">Lo pego después</a>
+  </div>
+  <p class="suave chico">Tu QR siempre está en tu comercio, en la sección Mi QR.</p>
 </section>
 <script type="application/json" id="datos-zonas">{{ zonas|tojson }}</script>
 {% endblock %}

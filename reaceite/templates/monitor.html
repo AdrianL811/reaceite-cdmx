@@ -20,6 +20,29 @@
     <ol id="pipeline" class="pipeline"></ol>
   </section>
 
+  <div class="dos-columnas operacion">
+    <section class="superficie" aria-live="polite">
+      <h2>Fondo de Garantía de Dispersión</h2>
+      <p class="suave chico" style="margin-top:0">Capital con el que se paga al comercio en segundos, antes de vender el aceite a la planta.</p>
+      <span id="fondo-saldo" class="fondo-cifra">…</span>
+      <dl class="fondo-datos">
+        <div><dt>Dispersado a billeteras</dt><dd id="fondo-dispersado">–</dd></div>
+        <div><dt>Pagos esperando fondos</dt><dd id="fondo-espera">–</dd></div>
+        <div><dt>Aceite pagado sin vender</dt><dd id="fondo-inventario">–</dd></div>
+        <div><dt id="fondo-precio-txt">Venta a la planta</dt><dd id="fondo-venta">–</dd></div>
+        <div><dt>Margen bruto del lote</dt><dd id="fondo-margen">–</dd></div>
+      </dl>
+      {% if usuario and usuario.rol == 'admin' %}
+      <button id="vender-lote" class="boton boton--aceite boton--chico" type="button">Vender lote a la planta</button>
+      {% endif %}
+      <p id="fondo-lotes" class="suave chico" style="margin:.6rem 0 0"></p>
+    </section>
+    <section class="superficie">
+      <h2>Contenedores inteligentes</h2>
+      <ul id="lista-contenedores" class="contenedores-monitor"></ul>
+    </section>
+  </div>
+
   <div class="monitor">
     <section>
       <h2>Bitácora de eventos</h2>
@@ -32,7 +55,7 @@
         <table class="tabla"><thead><tr><th>Folio</th><th>Estatus</th><th>Monto</th><th>Clave de rastreo</th></tr></thead><tbody id="tabla-pagos"></tbody></table>
       </section>
       <section class="superficie">
-        <h3>Banco simulado (API SPEI)</h3>
+        <h3>Pasarela de pagos simulada (SPEI)</h3>
         <table class="tabla"><thead><tr><th>Orden</th><th>Referencia</th><th>Estatus</th><th>Webhook</th></tr></thead><tbody id="tabla-banco"></tbody></table>
         <p id="cola" class="suave chico" style="margin:.75rem 0 0"></p>
       </section>
@@ -49,6 +72,20 @@
           {% endif %}
         </div>
       </section>
+      {% if usuario and usuario.rol == 'admin' %}
+      <section class="superficie">
+        <h3>Cuentas de comercio</h3>
+        <p class="suave chico">Si un comercio olvidó su PIN o quedó bloqueado, genera un PIN temporal y dáselo en persona. Al entrar verá un aviso para cambiarlo.</p>
+        <form id="form-pin-admin" class="fila-form">
+          <label class="campo">
+            <span>Código del comercio</span>
+            <input id="pin-admin-codigo" type="text" placeholder="COM-0006" autocomplete="off" autocapitalize="characters" required>
+          </label>
+          <button class="boton boton--chico" type="submit">Generar PIN temporal</button>
+        </form>
+        <div id="pin-admin-resultado" hidden></div>
+      </section>
+      {% endif %}
     </aside>
   </div>
 </div>

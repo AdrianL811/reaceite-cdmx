@@ -1,5 +1,6 @@
-import { $, $$, api, dinero, el, fecha, hace, hora, litros, miComercio, miles, mostrarMensaje, sondear } from "./comun.js";
+import { $, $$, api, dinero, el, fecha, hora, litros, miles, mostrarMensaje, sondear } from "./comun.js";
 import { crearCubeta } from "./cubeta.js";
+import { abrirEscaner } from "./escaner.js";
 
 const raiz = $("#pantalla-comercio");
 const token = raiz.dataset.token;
@@ -67,7 +68,7 @@ function pasos(d) {
     ["Pedida", s ? `${s.folio}: ${s.litros} L de ${s.franja_txt}` : ""],
     ["En ruta", s && s.ruta ? `${s.ruta.folio}, parada ${s.ruta.parada} de ${s.ruta.de}` : "Sale cuando la zona junta 20 L"],
     ["Recolectada", p && nivel >= 3 ? `${litros(p.recoleccion.litros)} pesados frente a ti` : "Pesamos tu aceite frente a ti"],
-    ["Pagada", p && nivel === 4 ? `${dinero(p.monto)} por transferencia` : "Transferencia al momento"],
+    ["Pagada", p && nivel === 4 ? `${dinero(p.monto)} en tu billetera` : "Directo a tu billetera"],
   ];
   return datos.map(([titulo, detalle], i) => {
     const n = i + 1;
@@ -92,14 +93,14 @@ function ticket(p, nuevo) {
       el("span", {}, liquidado ? "Pago recibido" : p.estatus === "RECHAZADO" ? "Pago rechazado" : "Pago en camino"),
       el("span", { class: "chico" }, p.folio)),
     el("p", { class: "ticket__monto" }, dinero(p.monto)),
-    el("p", { class: "suave chico" }, liquidado ? "Transferencia SPEI simulada, liquidada." : "El banco está procesando la transferencia."),
+    el("p", { class: "suave chico" }, liquidado ? "Abonado a tu billetera (pago simulado del piloto)."
+      : p.espera || "La pasarela está procesando la transferencia."),
     el("hr"),
     el("dl", {}, filas.map(([dt, dd]) => el("div", {}, el("dt", {}, dt), el("dd", {}, dd)))),
   );
 }
 
 function render(d) {
-  miComercio.guardar(d);
   const z = textoZona(d);
   cubeta.fijar(z.total, z.propios);
   $("#zona-cifra").replaceChildren(z.cifra, el("small", {}, z.de));
@@ -122,10 +123,24 @@ function render(d) {
     comprobante.replaceChildren(el("h2", {}, "Tu último pago"), ticket(p, nuevo));
     comprobante.hidden = false;
     if (nuevo && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    if (nuevo) cargarBilletera(true);
     estado.pagoVisto = clave;
   } else {
     comprobante.hidden = true;
     estado.pagoVisto = p ? `${p.folio}:${p.estatus}` : "";
+  }
+
+  const abierto = d.deposito_abierto;
+  $("#deposito-abierto").hidden = !abierto;
+  if (abierto) $("#volver-deposito").href = abierto.url;
+  if (!estado.contenedoresPintados) {
+    estado.contenedoresPintados = true;
+    $("#lista-contenedores").replaceChildren(...d.contenedores.map((k) => el("li", {},
+      el("span", { class: "mini-nivel", role: "img", "aria-label": `Lleno al ${k.porcentaje} %` },
+        el("span", { style: `height:${k.porcentaje}%` })),
+      el("span", {}, el("b", {}, k.nombre), el("small", {}, `${k.direccion}, ${k.zona}`)),
+      el("span", { class: "chico suave" }, `${k.porcentaje} %`),
+    )));
   }
 
   $("#total-litros").textContent = litros(d.acumulado.litros);
@@ -133,15 +148,34 @@ function render(d) {
   $("#total-cobrado").textContent = dinero(d.acumulado.cobrado);
   const lista = $("#historial");
   lista.replaceChildren(...d.historial.map((h) => el("li", {},
-    el("span", {}, `${litros(h.litros)} recolectados`, el("small", {}, `${fecha(h.fecha)}, ${miles(h.agua_l)} L de agua protegida`)),
+    el("span", {}, h.origen === "CONTENEDOR" ? `${litros(h.litros)} en contenedor` : `${litros(h.litros)} recolectados`,
+      el("small", {}, `${fecha(h.fecha)}, ${miles(h.agua_l)} L de agua protegida`)),
     el("span", { class: "monto" }, dinero(h.monto)),
   )));
   $("#sin-historial").hidden = d.historial.length > 0;
   $("#actualizado").textContent = `Actualizado a las ${hora(new Date().toISOString())}`;
 }
 
+// Si la sesión terminó (PIN cambiado en otro teléfono, 90 días sin entrar), se vuelve a pedir el PIN.
+function revisarSesion(error) {
+  if (error && error.status === 401) {
+    window.location.href = `/comercio/entrar?siguiente=${encodeURIComponent(window.location.pathname)}`;
+    return true;
+  }
+  if (error && error.codigo === "otro_comercio") {
+    // Esta pestaña quedó con un QR viejo (se reemplazó en otro teléfono): se abre el panel actual.
+    window.location.href = "/mi-comercio";
+    return true;
+  }
+  return false;
+}
+
 async function cargar() {
-  render(await api(`/api/comercio/${encodeURIComponent(token)}`));
+  try {
+    render(await api(`/api/comercio/${encodeURIComponent(token)}`));
+  } catch (error) {
+    if (!revisarSesion(error)) throw error;
+  }
 }
 
 $("#pedir").addEventListener("click", async () => {
@@ -158,6 +192,7 @@ $("#pedir").addEventListener("click", async () => {
     estado.litros = null;
     $$('[data-grupo="litros"] button').forEach((b) => b.setAttribute("aria-pressed", "false"));
   } catch (error) {
+    if (revisarSesion(error)) return;
     mostrarMensaje(mensaje, error.message, "error");
     if (error.codigo === "solicitud_abierta") cargar();
   } finally {
@@ -173,14 +208,120 @@ $("#cancelar").addEventListener("click", async () => {
     render(await api(`/api/solicitudes/${encodeURIComponent(folio)}/cancelar`, { metodo: "POST", datos: { token } }));
     mostrarMensaje(mensaje, `Cancelaste la solicitud ${folio}.`, "info");
   } catch (error) {
+    if (revisarSesion(error)) return;
     mostrarMensaje(mensaje, error.message, "error");
   }
 });
 
+// ---------------------------------------------------------------- billetera (saldo consultado a la pasarela)
+async function cargarBilletera(cambio = false) {
+  let b;
+  try {
+    b = await api("/api/mi-comercio/billetera");
+  } catch (error) {
+    if (revisarSesion(error)) return;
+    $("#billetera-nota").textContent = "No pudimos consultar tu saldo. Intenta en un momento.";
+    return;
+  }
+  const saldo = $("#billetera-saldo");
+  saldo.textContent = dinero(b.saldo);
+  if (cambio) {
+    saldo.classList.remove("cambio");
+    void saldo.offsetWidth;
+    saldo.classList.add("cambio");
+  }
+  $("#billetera-celular").textContent = `Ligada al ${b.celular}`;
+  $("#billetera-nota").textContent = b.activa
+    ? `Cuenta ${b.clabe}. Saldo consultado a la pasarela de pagos (simulada).`
+    : "Tu billetera se activa en unos segundos.";
+  const lista = $("#billetera-movimientos");
+  lista.hidden = !b.movimientos.length;
+  lista.replaceChildren(...b.movimientos.slice(0, 3).map((m) => el("li", {},
+    el("span", {}, `${fecha(m.fecha)}, ${m.concepto.replace(/\s*\([^)]*\)\s*$/, "")}`),
+    el("b", { class: m.tipo === "ABONO" ? "abono" : "" }, `${m.tipo === "ABONO" ? "+" : "−"}${dinero(m.monto)}`),
+  )));
+}
+
+// ---------------------------------------------------------------- contenedores
+$("#escanear-contenedor").addEventListener("click", () => abrirEscaner((resultado) => {
+  if (resultado.contenedor) window.location.href = `/k/${encodeURIComponent(resultado.contenedor)}`;
+  else if (resultado.contenedorCodigo) window.location.href = `/contenedor/${encodeURIComponent(resultado.contenedorCodigo)}`;
+  else mostrarMensaje($("#mensaje-contenedor"), "Ese es el QR de un bote. Escanea el QR pegado en el contenedor.", "error");
+}, { titulo: "Escanear el QR del contenedor", aviso: "Apunta la cámara al QR del contenedor.", placeholder: "Código del contenedor, por ejemplo CTN-0001" }));
+
+// ---------------------------------------------------------------- Mi QR
+const mensajeQr = $("#mensaje-qr");
+
+$("#ya-pegue").addEventListener("click", async () => {
+  const boton = $("#ya-pegue");
+  boton.disabled = true;
+  try {
+    await api("/api/mi-comercio/qr/confirmar", { metodo: "POST", datos: {} });
+    $("#falta-qr").hidden = true;
+    mostrarMensaje(mensajeQr, "Perfecto: el recolector ya puede escanear tu bote.", "ok");
+  } catch (error) {
+    if (revisarSesion(error)) return;
+    mostrarMensaje(mensaje, error.message, "error");
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+$("#form-reemplazar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!window.confirm("Tu QR actual dejará de funcionar y tendrás que pegar el nuevo en tu bote. ¿Reemplazarlo?")) return;
+  const boton = $("#form-reemplazar button");
+  boton.disabled = true;
+  try {
+    const d = await api("/api/mi-comercio/qr/reemplazar", { metodo: "POST", datos: { pin: $("#pin-reemplazar").value } });
+    window.location.href = `/c/${encodeURIComponent(d.token)}?qr=nuevo#mi-qr`;
+  } catch (error) {
+    if (revisarSesion(error)) return;
+    mostrarMensaje(mensajeQr, error.message, "error");
+    boton.disabled = false;
+  }
+});
+
+if (new URLSearchParams(window.location.search).get("qr") === "nuevo") {
+  mostrarMensaje(mensajeQr, "Listo: este es tu QR nuevo. Imprímelo y pégalo en tu bote; el anterior ya no funciona.", "ok");
+  window.history.replaceState(null, "", window.location.pathname + "#mi-qr");
+}
+
+// ---------------------------------------------------------------- Mi cuenta
+$("#form-pin").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mensajeCuenta = $("#mensaje-cuenta");
+  const boton = $("#form-pin button");
+  boton.disabled = true;
+  try {
+    const r = await api("/api/mi-comercio/pin", {
+      metodo: "POST",
+      datos: { actual: $("#pin-actual").value, nuevo: $("#pin-nuevo").value, confirmacion: $("#pin-confirmacion").value },
+    });
+    $("#form-pin").reset();
+    $("#form-pin").closest("details").open = false;
+    const aviso = $(".aviso--pin");
+    if (aviso) aviso.hidden = true;
+    mostrarMensaje(mensajeCuenta, r.mensaje, "ok");
+  } catch (error) {
+    if (revisarSesion(error)) return;
+    mostrarMensaje(mensajeCuenta, error.message, "error");
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 actualizarEstimado();
+cargarBilletera();
 let enCurso = false;
 const cargarYMedir = async () => {
-  const d = await api(`/api/comercio/${encodeURIComponent(token)}`);
+  let d;
+  try {
+    d = await api(`/api/comercio/${encodeURIComponent(token)}`);
+  } catch (error) {
+    if (revisarSesion(error)) return;
+    throw error;
+  }
   render(d);
   enCurso = Boolean(d.solicitud || (d.ultimo_pago && d.ultimo_pago.estatus !== "LIQUIDADO"));
 };

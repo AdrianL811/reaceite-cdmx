@@ -31,7 +31,13 @@
     <div class="barra__extra">
       {% block barra %}
       {% if usuario %}
+        <a href="{{ url_for('web.monitor') }}">Centro de control</a>
+        <a href="{{ url_for('contenedores.gemelo_digital') }}">Gemelo digital</a>
+        <a href="{{ url_for('web.recolector') }}">Ruta</a>
         <span>{{ usuario.nombre }}</span>
+        <form method="post" action="{{ url_for('auth.logout') }}"><button class="enlace-boton" type="submit">Salir</button></form>
+      {% elif comercio_sesion %}
+        <a href="{{ url_for('web.mi_comercio') }}">{{ comercio_sesion.nombre }}</a>
         <form method="post" action="{{ url_for('auth.logout') }}"><button class="enlace-boton" type="submit">Salir</button></form>
       {% endif %}
       {% endblock %}

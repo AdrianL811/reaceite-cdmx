@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block titulo %}{{ contenedor.nombre }} · ReAceite{% endblock %}
+{% block clase_main %}{% if modo == 'equipo' %}ancho{% else %}contenido{% endif %}{% endblock %}
+{% block contenido %}
+<div id="pantalla-contenedor" data-modo="{{ modo }}" data-codigo="{{ contenedor.codigo }}"
+     data-token="{{ contenedor.token }}" data-deposito="{{ mi_deposito or '' }}">
+<script type="application/json" id="datos-contenedor">{{ contenedor|tojson }}</script>
+<script type="application/json" id="datos-parametros">{{ parametros_json|tojson }}</script>
+
+{% if modo == 'equipo' %}
+  {# ---------------------------------------------------------------- gemelo digital (equipo) #}
+  <div class="tablero__cabeza">
+    <div>
+      <h1>Gemelo digital de {{ contenedor.codigo }}</h1>
+      <span class="suave">{{ contenedor.nombre }}, {{ contenedor.direccion }}</span>
+    </div>
+    <div class="acciones" style="margin:0">
+      <span id="senal" class="en-vivo caido" role="status">Conectando…</span>
+      <a class="boton boton--chico" href="{{ url_for('web.monitor') }}" target="_blank" rel="noopener">Abrir el centro de control</a>
+      {% for otro in otros %}<a class="boton boton--chico" href="{{ url_for('contenedores.gemelo_digital', c=otro) }}">Ver {{ otro }}</a>{% endfor %}
+    </div>
+  </div>
+  <div id="mensaje" hidden></div>
+
+  <div class="gemelo">
+    <section class="gemelo__equipo superficie" aria-label="Contenedor">
+      <div class="gemelo__bote">
+        <svg id="bote" class="bote" viewBox="0 0 240 320" role="img" aria-labelledby="bote-titulo">
+          <title id="bote-titulo">Contenedor inteligente con báscula</title>
+          <defs>
+            <clipPath id="bote-ventana"><rect x="58" y="92" width="124" height="168" rx="12"/></clipPath>
+            <linearGradient id="bote-aceite" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#f4b83c"/><stop offset="1" stop-color="#c98705"/>
+            </linearGradient>
+          </defs>
+          <rect class="bote__chorro" x="114" y="0" width="12" height="96" rx="6" fill="url(#bote-aceite)"/>
+          <rect x="34" y="74" width="172" height="232" rx="18" fill="#12383d"/>
+          <rect x="58" y="92" width="124" height="168" rx="12" fill="#0b2629"/>
+          <g clip-path="url(#bote-ventana)">
+            <g class="bote__nivel" id="bote-nivel">
+              <rect x="58" y="92" width="124" height="400" fill="url(#bote-aceite)"/>
+              <rect class="bote__deposito" id="bote-deposito" x="58" y="92" width="124" height="0" fill="#f8d58a"/>
+            </g>
+          </g>
+          <g stroke="#3d6a6f" stroke-width="2">
+            <line x1="58" x2="70" y1="134" y2="134"/><line x1="58" x2="70" y1="176" y2="176"/><line x1="58" x2="70" y1="218" y2="218"/>
+          </g>
+          <rect x="98" y="270" width="44" height="24" rx="4" fill="#fff"/>
+          <path d="M104 276h8v8h-8zM128 276h8v8h-8zM104 282h2M116 276v12M120 282h4v6" stroke="#12383d" stroke-width="2" fill="none"/>
+          <g class="bote__tapa" id="bote-tapa">
+            <rect x="26" y="58" width="188" height="22" rx="10" fill="#1d4b51"/>
+            <rect x="102" y="50" width="36" height="10" rx="5" fill="#e8a11a"/>
+          </g>
+        </svg>
+        <div class="gemelo__lecturas">
+          <div class="lcd" aria-live="polite">
+            <small>Celda de carga</small>
+            <span id="lcd-peso">–</span>
+          </div>
+          <dl class="gemelo__datos">
+            <div><dt>Compuerta</dt><dd id="dato-compuerta">–</dd></div>
+            <div><dt>Depósito</dt><dd id="dato-deposito">–</dd></div>
+            <div><dt>En este depósito</dt><dd id="dato-neto">–</dd></div>
+            <div><dt>Nivel</dt><dd id="dato-nivel">–</dd></div>
+          </dl>
+        </div>
+      </div>
+      <div class="gemelo__controles">
+        <button id="verter" class="boton boton--aceite" type="button" disabled>Verter aceite (mantén presionado)</button>
+        <button id="cerrar-tapa" class="boton boton--petroleo" type="button" disabled>Cerrar la tapa</button>
+      </div>
+      <p id="ayuda-gemelo" class="suave chico">Esperando a que un comercio escanee el QR y abra la compuerta.</p>
+    </section>
+
+    <aside class="gemelo__lado">
+      <section class="superficie gemelo__qr">
+        <img src="{{ contenedor.qr }}" alt="QR del {{ contenedor.nombre }}" width="220" height="220">
+        <div>
+          <h2>QR pegado en el contenedor</h2>
+          <p class="suave chico">El comercio lo escanea con su celular y su sesión abierta para abrir la compuerta. Puedes escanear esta pantalla para probar.</p>
+          <a class="boton boton--chico" href="{{ contenedor.qr }}?descargar=1" download>Descargar QR</a>
+        </div>
+      </section>
+      <section class="superficie">
+        <h2>Última señal del dispositivo</h2>
+        <p id="ultima-senal" class="suave chico">Todavía no se envía ninguna señal.</p>
+        <pre id="log-senal" class="consola" hidden></pre>
+      </section>
+      <section class="superficie">
+        <h2>Mantenimiento</h2>
+        <p class="suave chico">Al pasar la ruta, el recolector vacía el contenedor en el camión. El nivel y la báscula vuelven a cero.</p>
+        <button id="vaciar" class="boton boton--chico" type="button">Vaciar contenedor</button>
+      </section>
+    </aside>
+  </div>
+
+{% else %}
+  {# ---------------------------------------------------------------- comercio y público #}
+  <div class="cabeza-comercio">
+    <div>
+      <h1>{{ contenedor.nombre }}</h1>
+      <span class="suave">{{ contenedor.direccion }}</span>
+    </div>
+    <span class="etiqueta">{{ contenedor.zona_nombre }}</span>
+  </div>
+
+  <section class="nivel-contenedor superficie" aria-label="Nivel del contenedor">
+    <div class="nivel-contenedor__barra" role="img" aria-label="Lleno al {{ contenedor.porcentaje }} %">
+      <span style="height: {{ contenedor.porcentaje }}%"></span>
+    </div>
+    <div>
+      <span class="cifra">{{ contenedor.porcentaje }} %</span>
+      <p class="suave"><span>lleno, {{ contenedor.nivel_l }} de {{ contenedor.capacidad_l }} L. </span>Báscula de precisión y compuerta con cerradura: solo se abre para ti.</p>
+      <p id="estado-senal" class="chico {% if contenedor.en_linea %}senal-ok{% else %}senal-no{% endif %}">
+        {% if contenedor.en_linea %}Contenedor en línea{% else %}Contenedor sin señal en este momento{% endif %}
+      </p>
+    </div>
+  </section>
+
+  <div id="mensaje" class="bloque" hidden></div>
+
+  {% if modo == 'comercio' %}
+  <section id="paso-abrir" class="bloque deposito-paso" {% if mi_deposito %}hidden{% endif %}>
+    <h2 class="pregunta">Deposita tu aceite y cobra al momento</h2>
+    <ol class="pasos-qr">
+      <li>Toca <b>Abrir compuerta</b>: se abre 5 minutos solo para ti.</li>
+      <li>Vierte tu aceite. La báscula del contenedor lo pesa.</li>
+      <li>Cierra la tapa. El pago llega a tu billetera en segundos.</li>
+    </ol>
+    <button id="abrir" class="boton boton--aceite" type="button" {% if contenedor.deposito and contenedor.deposito.ocupado %}disabled{% endif %}>Abrir compuerta</button>
+    {% if contenedor.deposito and contenedor.deposito.ocupado %}
+    <p class="suave chico">Alguien más está depositando. Espera un minuto.</p>
+    {% endif %}
+  </section>
+
+  <section id="paso-vertiendo" class="bloque deposito-paso" hidden aria-live="polite">
+    <div class="vertiendo superficie">
+      <span class="vertiendo__estado">Compuerta abierta</span>
+      <p class="vertiendo__peso"><span id="peso-vivo" class="cifra">0.000</span> <span>kg</span></p>
+      <p id="estimado-vivo" class="vertiendo__estimado">Vierte tu aceite: la báscula lo pesa en vivo.</p>
+      <p class="suave chico">Cuando termines, cierra la tapa del contenedor. <span id="cuenta-atras"></span></p>
+    </div>
+    <button id="cancelar-deposito" class="boton boton--chico" type="button" style="margin-top:1rem">Cancelar</button>
+  </section>
+
+  <section id="paso-pago" class="bloque deposito-paso" hidden aria-live="polite">
+    <h2>Tu depósito</h2>
+    <ol id="progreso-deposito" class="progreso"></ol>
+    <div id="ticket-deposito"></div>
+    <div class="acciones">
+      <a class="boton" href="{{ url_for('web.mi_comercio') }}">Ir a mi panel</a>
+    </div>
+  </section>
+
+  {% else %}
+  <section class="superficie publico">
+    <h2>Contenedor ReAceite</h2>
+    <p>Aquí los comercios depositan su aceite usado de cocina y cobran al momento en su billetera. El aceite se convierte en biocombustible y deja de tapar el drenaje: cada litro protege 1,000 litros de agua.</p>
+  </section>
+  <div class="acciones bloque">
+    <a class="boton boton--aceite" href="{{ url_for('auth.login_comercio', siguiente=url_for('contenedores.pagina_contenedor', token=contenedor.token)) }}">Entrar con mi celular y PIN</a>
+    <a class="boton" href="{{ url_for('web.registro') }}">Registrar mi negocio</a>
+  </div>
+  <p class="suave chico">La compuerta solo se abre con la cuenta de un comercio registrado: así cada pago llega a quien entregó el aceite.</p>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/contenedor.js') }}"></script>{% endblock %}

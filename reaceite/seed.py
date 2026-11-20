@@ -2,18 +2,30 @@
 
 Escenario: Hipódromo tiene 15 L pendientes (10 L + 5 L). Cuando el «Puesto demo» (COM-0006)
 pide 5 L, la zona llega a 20 L y la ruta sale sola.
+
+Cuentas: cada comercio de demostración entra con el celular 55 1000 00NN (NN = su número)
+y el PIN de la variable PIN_DEMO (900900 si no se define).
+
+Sprint 3: dos contenedores inteligentes con depósitos previos, el Fondo de Garantía de Dispersión
+con su capital semilla (FONDO_INICIAL) y una billetera por comercio con su historial de abonos.
 """
 import json
 from datetime import timedelta, timezone
+from decimal import Decimal
 
 from werkzeug.security import generate_password_hash
 
-from . import metricas, servicios
-from .config import TZ
+from . import cuentas, iot, metricas, servicios, spei_sim
+from .config import CONTENEDORES, PLANTA, TZ
 from .db import ahora_utc, iso, meta_set, siguiente_numero, vaciar
 from .metricas import a_enteros, calcular
 
-VERSION_SEMILLA = 3
+VERSION_SEMILLA = 5
+
+
+def telefono_demo(codigo):
+    """COM-0006 → 5510000006."""
+    return f"55100000{int(codigo[-4:]):02d}"
 
 COMERCIOS = [
     # código, nombre, tipo, dirección, zona, franja, lat, lon
@@ -42,6 +54,14 @@ HISTORIAL = [
     ("COM-0007", 2, 13.1, "12.0"),
 ]
 
+# Depósitos anteriores en contenedores: (comercio, contenedor, días atrás, horas, peso en kg)
+HISTORIAL_CONTENEDOR = [
+    ("COM-0004", "CTN-0001", 5, 16.8, "18.5"),
+    ("COM-0005", "CTN-0001", 3, 18.2, "7.4"),
+    ("COM-0003", "CTN-0001", 1, 19.0, "5.5"),
+    ("COM-0007", "CTN-0002", 2, 17.5, "6.1"),
+]
+
 # Solicitudes pendientes al iniciar la demo: (código, litros, franja, horas atrás)
 PENDIENTES = [
     ("COM-0002", 10, "10-12", 3.5),
@@ -63,21 +83,28 @@ def sembrar(conn, config):
         ],
     )
     hace_dos_semanas = iso(ahora - timedelta(days=14))
+    pin_hash = cuentas.hash_pin(config["PIN_DEMO"])  # un solo hash: los 8 comparten el PIN de demostración
     comercios = {}
     for codigo, nombre, tipo, direccion, zona, franja, lat, lon in COMERCIOS:
         fila = servicios.crear_comercio(
             conn,
             {"nombre": nombre, "tipo": tipo, "direccion": direccion, "zona": zona, "franja": franja,
-             "lat": lat, "lon": lon},
+             "lat": lat, "lon": lon, "telefono": telefono_demo(codigo)},
             demo=True, token=servicios.token_semilla(codigo), creado=hace_dos_semanas,
+            pin_hash=pin_hash, sal=cuentas.sal_demo(codigo, config["SECRET_KEY"]),
         )
         assert fila["codigo"] == codigo
         comercios[codigo] = fila
 
+    contenedores = _contenedores(conn, config, hace_dos_semanas)
     medianoche = ahora.astimezone(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-    for codigo, dias, horas, peso in HISTORIAL:
+    historial = [(codigo, dias, horas, peso, None) for codigo, dias, horas, peso in HISTORIAL]
+    historial += [(codigo, dias, horas, peso, ctn) for codigo, ctn, dias, horas, peso in HISTORIAL_CONTENEDOR]
+    historial.sort(key=lambda h: (-h[1], h[2]))
+    for codigo, dias, horas, peso, ctn in historial:
         cuando = (medianoche - timedelta(days=dias) + timedelta(hours=horas)).astimezone(timezone.utc)
-        _recoleccion_historica(conn, comercios[codigo], cuando, peso)
+        _recoleccion_historica(conn, comercios[codigo], cuando, peso, contenedores.get(ctn))
+    _pasarela(conn, config, ahora - timedelta(days=14))
 
     for codigo, litros, franja, horas in PENDIENTES:
         conn.execute(
@@ -90,7 +117,74 @@ def sembrar(conn, config):
     meta_set(conn, "semilla", {"version": VERSION_SEMILLA, "cargada": iso(ahora)})
 
 
-def _recoleccion_historica(conn, comercio, cuando, peso):
+def _contenedores(conn, config, creado):
+    creados = {}
+    for codigo, nombre, direccion, zona, lat, lon, capacidad in CONTENEDORES:
+        if conn.execute("SELECT 1 FROM contenedor WHERE codigo = ?", (codigo,)).fetchone():
+            continue
+        conn.execute(
+            "INSERT INTO contenedor(codigo, token, nombre, direccion, zona, lat, lon, capacidad_l, secreto, creado) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (codigo, servicios.token_semilla(codigo), nombre, direccion, zona, lat, lon, capacidad,
+             iot.secreto_dispositivo(config, codigo), creado),
+        )
+        creados[codigo] = conn.execute("SELECT * FROM contenedor WHERE codigo = ?", (codigo,)).fetchone()
+    return creados
+
+
+def _pasarela(conn, config, desde):
+    """Cuentas de la pasarela simulada y sus movimientos, coherentes con el historial de pagos."""
+    t = iso(desde)
+    fondo = spei_sim.asegurar_cuenta(conn, spei_sim.FONDO_CLABE, "ReAceite CDMX · Fondo de Garantía de Dispersión",
+                                     "FONDO", creado=t)
+    planta = spei_sim.asegurar_cuenta(conn, spei_sim.PLANTA_CLABE, f"{PLANTA['nombre']} (simulada)", "PLANTA",
+                                      creado=t)
+    if conn.execute("SELECT COUNT(*) FROM movimiento").fetchone()[0]:
+        return
+    inicial = int(Decimal(str(config.get("FONDO_INICIAL", "45000.00"))) * 100)
+    spei_sim.mover(conn, fondo["id"], "ABONO", inicial, "Capital semilla del Fondo de Garantía de Dispersión",
+                   "CAPITAL-SEMILLA", creado=t)
+    spei_sim.mover(conn, planta["id"], "ABONO", 100_000_000, "Saldo de la planta en el banco simulado", creado=t)
+    for c in conn.execute("SELECT * FROM comercio ORDER BY id").fetchall():
+        spei_sim.asegurar_cuenta(conn, c["clabe"], c["nombre"], "BILLETERA", c["telefono"], creado=c["creado"])
+    for p in conn.execute(
+            "SELECT p.*, o.folio AS orden, o.concepto, c.nombre FROM pago p JOIN spei_orden o ON o.referencia = p.folio "
+            "JOIN comercio c ON c.id = p.comercio_id WHERE p.estatus = 'LIQUIDADO' ORDER BY p.liquidado").fetchall():
+        destino = spei_sim.cuenta_por_clabe(conn, p["clabe"])
+        spei_sim.mover(conn, fondo["id"], "CARGO", p["monto_cent"], f"SPEI enviado a {p['nombre']}", p["folio"],
+                       p["orden"], creado=p["creado"])
+        spei_sim.mover(conn, destino["id"], "ABONO", p["monto_cent"], p["concepto"], p["folio"], p["orden"],
+                       creado=p["liquidado"])
+    conn.execute("UPDATE spei_orden SET clabe_origen = ?", (spei_sim.FONDO_CLABE,))
+
+
+def completar_sprint3(conn, config):
+    """Bases creadas antes del Sprint 3: agrega contenedores, cuentas de la pasarela y billeteras que falten."""
+    _contenedores(conn, config, iso(ahora_utc()))
+    if spei_sim.cuenta_por_clabe(conn, spei_sim.FONDO_CLABE) is None:
+        _pasarela(conn, config, ahora_utc())
+    for c in conn.execute("SELECT * FROM comercio WHERE clabe NOT IN (SELECT clabe FROM cuenta)").fetchall():
+        cuenta = spei_sim.asegurar_cuenta(conn, c["clabe"], c["nombre"], "BILLETERA", c["telefono"])
+        if c["cobrado_cent"]:
+            spei_sim.mover(conn, cuenta["id"], "ABONO", c["cobrado_cent"], "Saldo de pagos anteriores", c["codigo"])
+
+
+def completar_cuentas_demo(conn, config):
+    """Bases creadas antes de las cuentas: da celular y PIN a los comercios de demostración que no tengan."""
+    pin_hash = None
+    for fila in conn.execute("SELECT id, codigo FROM comercio WHERE demo = 1 AND pin_hash IS NULL").fetchall():
+        telefono = telefono_demo(fila["codigo"])
+        if cuentas.comercio_por_telefono(conn, telefono):
+            continue
+        pin_hash = pin_hash or cuentas.hash_pin(config["PIN_DEMO"])
+        conn.execute(
+            "UPDATE comercio SET telefono = ?, pin_hash = ?, sesion_sal = ?, qr_confirmado = COALESCE(qr_confirmado, "
+            "creado) WHERE id = ?",
+            (telefono, pin_hash, cuentas.sal_demo(fila["codigo"], config["SECRET_KEY"]), fila["id"]),
+        )
+
+
+def _recoleccion_historica(conn, comercio, cuando, peso, contenedor=None):
     m = calcular(peso)
     e = a_enteros(m)
     t = iso(cuando)
@@ -139,3 +233,18 @@ def _recoleccion_historica(conn, comercio, cuando, peso):
         "WHERE id = ?",
         (e["litros_cl"], e["agua_l"], e["neto_cent"], comercio["id"]),
     )
+    if contenedor is not None:
+        actual = conn.execute("SELECT nivel_cl, peso_g FROM contenedor WHERE id = ?", (contenedor["id"],)).fetchone()
+        n_dep = siguiente_numero(conn, "deposito")
+        conn.execute("UPDATE recoleccion SET origen = 'CONTENEDOR', contenedor_id = ? WHERE id = ?",
+                     (contenedor["id"], n_rec))
+        conn.execute(
+            "INSERT INTO deposito(id, folio, contenedor_id, comercio_id, estado, peso_inicial_g, peso_actual_g, "
+            "peso_neto_g, recoleccion_id, motivo, abierto, vence, cerrado) "
+            "VALUES (?, ?, ?, ?, 'CERRADO', ?, ?, ?, ?, 'tapa cerrada', ?, ?, ?)",
+            (n_dep, f"DEP-{n_dep:06d}", contenedor["id"], comercio["id"], actual["peso_g"],
+             actual["peso_g"] + e["peso_g"], e["peso_g"], n_rec, iso(cuando - timedelta(minutes=2)),
+             iso(cuando + timedelta(minutes=3)), t),
+        )
+        conn.execute("UPDATE contenedor SET nivel_cl = nivel_cl + ?, peso_g = peso_g + ? WHERE id = ?",
+                     (e["litros_cl"], e["peso_g"], contenedor["id"]))

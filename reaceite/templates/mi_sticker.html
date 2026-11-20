@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block titulo %}Sticker de {{ comercio.nombre }} · ReAceite{% endblock %}
+{% block contenido %}
+<div class="no-imprimir">
+  <h1>Tu sticker</h1>
+  <ol class="pasos-qr">
+    <li><b>Imprímelo</b> en papel adhesivo o en una hoja normal, y cúbrelo con cinta transparente para que no se moje.</li>
+    <li><b>Pégalo en tu bote de aceite</b>, en un lado que se vea.</li>
+    <li><b>El recolector lo escanea</b> cuando pasa: así registra tus litros y te paga al momento.</li>
+  </ol>
+  <div class="acciones acciones--fila">
+    <button class="boton boton--aceite" type="button" data-imprimir>Imprimir</button>
+    <a class="boton" href="{{ url_for('web.comercio', token=comercio.token) }}">Volver a mi comercio</a>
+  </div>
+  <p class="suave chico bloque">La hoja trae dos copias: una para el bote y otra de repuesto.</p>
+  <hr class="separador">
+</div>
+<div class="stickers stickers--propios">
+  {% for _ in range(2) %}
+  <div class="sticker sticker--grande">
+    <img src="{{ url_for('web.qr_comercio', token=comercio.token) }}" alt="QR de {{ comercio.nombre }}" width="300" height="300">
+    <div>
+      <b>{{ comercio.nombre }}</b>
+      <small>{{ comercio.codigo }}, {{ zonas[comercio.zona].nombre }}</small>
+      <p>Aceite usado para reciclar. Recolector: escanea este QR al pesar.</p>
+      <small>ReAceite CDMX</small>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static', filename='js/comun.js') }}"></script><script src="{{ url_for('static', filename='js/imprimir.js') }}"></script>{% endblock %}

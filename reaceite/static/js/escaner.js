@@ -28,22 +28,27 @@ async function crearDetector() {
   }
 }
 
-// Extrae el token de un QR de ReAceite (https://.../c/TOKEN) o de un código escrito a mano.
+// Extrae el token de un QR de ReAceite (https://.../c/TOKEN para botes, https://.../k/TOKEN para
+// contenedores) o de un código escrito a mano (COM-0006, CTN-0001).
 export function leerCodigo(texto) {
   const limpio = String(texto || "").trim();
   const enlace = limpio.match(/\/c\/([0-9A-Za-z]{6,12})(?:[/?#]|$)/);
   if (enlace) return { token: enlace[1].toUpperCase() };
+  const contenedor = limpio.match(/\/k\/([0-9A-Za-z]{6,12})(?:[/?#]|$)/);
+  if (contenedor) return { contenedor: contenedor[1].toUpperCase() };
+  const codigoContenedor = limpio.toUpperCase().match(/^CTN-?(\d{1,4})$/);
+  if (codigoContenedor) return { contenedorCodigo: `CTN-${codigoContenedor[1].padStart(4, "0")}` };
   const codigo = limpio.toUpperCase().match(/^COM-?(\d{1,4})$/);
   if (codigo) return { codigo: `COM-${codigo[1].padStart(4, "0")}` };
   if (/^[0-9A-Za-z]{6,12}$/.test(limpio)) return { token: limpio.toUpperCase() };
   return null;
 }
 
-export async function abrirEscaner(alLeer) {
+export async function abrirEscaner(alLeer, opciones = {}) {
   const video = el("video", { muted: true, playsinline: true, autoplay: true });
   video.muted = true;
-  const aviso = el("p", { role: "status" }, "Apunta la cámara al QR del bote.");
-  const campo = el("input", { type: "text", placeholder: "Código del sticker, por ejemplo COM-0006", "aria-label": "Código del sticker", autocomplete: "off" });
+  const aviso = el("p", { role: "status" }, opciones.aviso || "Apunta la cámara al QR del bote.");
+  const campo = el("input", { type: "text", placeholder: opciones.placeholder || "Código del sticker, por ejemplo COM-0006", "aria-label": "Código del sticker", autocomplete: "off" });
   let activo = true;
   let flujo = null;
 
@@ -65,7 +70,7 @@ export async function abrirEscaner(alLeer) {
   };
   const alTeclear = (e) => { if (e.key === "Escape") cerrar(); };
 
-  const capa = el("div", { class: "escaner", role: "dialog", "aria-modal": "true", "aria-label": "Escanear el QR del bote" },
+  const capa = el("div", { class: "escaner", role: "dialog", "aria-modal": "true", "aria-label": opciones.titulo || "Escanear el QR del bote" },
     el("div", { class: "escaner__cabeza" },
       el("button", { class: "boton boton--chico", type: "button", onclick: cerrar }, "Cerrar"),
     ),

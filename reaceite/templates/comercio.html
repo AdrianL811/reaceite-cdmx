@@ -5,12 +5,22 @@
      data-precio="{{ parametros.precio_litro }}" data-comision="{{ parametros.comision }}"
      data-agua="{{ parametros.agua_por_litro }}" data-tope="{{ parametros.tope_ruta_litros }}">
 
-  {% if usuario %}
-  <div class="banner-recolector">
-    <span>Tienes la sesión de recolector abierta.</span>
-    <a class="boton boton--aceite" href="{{ url_for('web.pesar', token=comercio.token) }}">Pesar este bote</a>
+  {% if comercio.pin_temporal %}
+  <div class="aviso aviso--pin" role="status">
+    <b>Estás usando un PIN temporal.</b>
+    <span>Cámbialo por uno que solo tú conozcas.</span>
+    <a class="boton boton--chico" href="#mi-cuenta">Cambiar mi PIN</a>
   </div>
   {% endif %}
+
+  <div id="falta-qr" class="aviso aviso--qr" {% if comercio.qr_confirmado %}hidden{% endif %}>
+    <b>Falta un paso: pega tu QR en el bote.</b>
+    <span>Sin el QR en tu bote de aceite, el recolector no puede registrar tus litros ni pagarte.</span>
+    <div class="acciones acciones--fila">
+      <a class="boton boton--aceite" href="#mi-qr">Ver mi QR</a>
+      <button id="ya-pegue" class="boton" type="button">Ya lo pegué</button>
+    </div>
+  </div>
 
   <div class="cabeza-comercio">
     <div>
@@ -18,6 +28,22 @@
       <span class="suave">{{ comercio.codigo }}, {{ comercio.tipo|lower }}</span>
     </div>
     <span class="etiqueta">{{ zonas[comercio.zona].nombre }}</span>
+  </div>
+
+  <section id="billetera" class="billetera" aria-labelledby="billetera-titulo" aria-live="polite">
+    <div class="billetera__cabeza">
+      <span id="billetera-titulo">Mi billetera</span>
+      <span id="billetera-celular" class="chico">{{ formato_telefono(comercio.telefono) }}</span>
+    </div>
+    <p id="billetera-saldo" class="billetera__saldo">…</p>
+    <p id="billetera-nota">Consultando tu saldo…</p>
+    <ul id="billetera-movimientos" hidden></ul>
+  </section>
+
+  <div id="deposito-abierto" class="aviso aviso--qr" hidden>
+    <b>Tienes una compuerta abierta.</b>
+    <span>Termina tu depósito en el contenedor.</span>
+    <a id="volver-deposito" class="boton boton--aceite boton--chico" href="#">Volver al depósito</a>
   </div>
 
   <section class="zona-panel superficie" aria-labelledby="zona-cifra">
@@ -53,6 +79,44 @@
 
   <section id="comprobante" class="bloque" hidden></section>
 
+  <section id="contenedores" class="bloque" aria-labelledby="contenedores-titulo">
+    <h2 id="contenedores-titulo">¿No quieres esperar la ruta?</h2>
+    <p class="suave">Lleva tu aceite a un contenedor ReAceite, escanea su QR y cobra en cuanto cierras la tapa.</p>
+    <ul id="lista-contenedores" class="contenedores-lista"></ul>
+    <div id="mensaje-contenedor" hidden></div>
+    <button id="escanear-contenedor" class="boton boton--petroleo" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M7 7h4v4H7zM13 13h4v4h-4zM13 7h4v4h-4zM7 13h4v4H7z" fill="currentColor" opacity=".85"/></svg>
+      Escanear el QR del contenedor
+    </button>
+  </section>
+
+  <section id="mi-qr" class="bloque mi-qr superficie" aria-labelledby="mi-qr-titulo">
+    <h2 id="mi-qr-titulo">Mi QR</h2>
+    <div id="mensaje-qr" hidden></div>
+    <div class="mi-qr__fila">
+      <img src="{{ url_for('web.qr_comercio', token=comercio.token) }}" alt="Código QR de {{ comercio.nombre }}" width="160" height="160">
+      <div>
+        <p><b>Pega este QR en tu bote de aceite.</b> El recolector lo escanea cuando pasa: así sabe que el aceite es tuyo, registra los litros y te paga al momento.</p>
+        <p class="suave chico">Sin el QR en el bote no podemos registrar tu aceite. Tú también puedes escanearlo para abrir esta pantalla.</p>
+      </div>
+    </div>
+    <div class="acciones acciones--fila">
+      <a class="boton boton--aceite" href="{{ url_for('web.mi_sticker') }}">Imprimir sticker</a>
+      <a class="boton" href="{{ url_for('web.qr_comercio', token=comercio.token, descargar=1) }}" download>Descargar QR</a>
+    </div>
+    <details class="desplegable">
+      <summary>¿Alguien más tiene una copia de tu QR? Reemplázalo</summary>
+      <p class="suave chico">Si tu sticker solo se dañó, vuelve a imprimirlo. Reemplázalo únicamente si alguien más tiene una copia: el QR anterior deja de funcionar y tendrás que pegar el nuevo.</p>
+      <form id="form-reemplazar" class="fila-form">
+        <label class="campo">
+          <span>Tu PIN, para confirmar</span>
+          <input id="pin-reemplazar" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="current-password" required>
+        </label>
+        <button class="boton" type="submit">Reemplazar mi QR</button>
+      </form>
+    </details>
+  </section>
+
   <section class="bloque">
     <h2>Lo que llevas con ReAceite</h2>
     <div class="totales">
@@ -67,6 +131,33 @@
     <ul id="historial" class="historial"></ul>
     <p id="sin-historial" class="vacio" hidden>Aquí verás cada recolección con su pago.</p>
     <p id="actualizado" class="suave chico"></p>
+  </section>
+
+  <section id="mi-cuenta" class="bloque" aria-labelledby="mi-cuenta-titulo">
+    <h2 id="mi-cuenta-titulo">Mi cuenta</h2>
+    <div id="mensaje-cuenta" hidden></div>
+    <p class="suave">Entras con tu celular <b>{{ formato_telefono(comercio.telefono) }}</b> y tu PIN. En este teléfono tu sesión sigue abierta; solo si pasan 90 días sin que entres te volveremos a pedir el PIN.</p>
+    <details class="desplegable" {% if comercio.pin_temporal %}open{% endif %}>
+      <summary>Cambiar mi PIN</summary>
+      <form id="form-pin">
+        <label class="campo">
+          <span>PIN actual</span>
+          <input id="pin-actual" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="current-password" required>
+        </label>
+        <label class="campo">
+          <span>PIN nuevo (6 números)</span>
+          <input id="pin-nuevo" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required>
+        </label>
+        <label class="campo">
+          <span>Repite el PIN nuevo</span>
+          <input id="pin-confirmacion" class="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password" required>
+        </label>
+        <button class="boton boton--petroleo" type="submit">Guardar PIN nuevo</button>
+      </form>
+    </details>
+    <form method="post" action="{{ url_for('auth.logout') }}" class="bloque">
+      <button class="boton" type="submit">Cerrar sesión en este teléfono</button>
+    </form>
   </section>
 </div>
 {% endblock %}

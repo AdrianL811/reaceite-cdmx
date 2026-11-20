@@ -12,8 +12,12 @@
     <span>de agua deja de contaminarse por cada litro de aceite que no va al drenaje.</span>
   </div>
   <div class="acciones">
-    <a id="mi-comercio" class="boton boton--aceite" href="#" hidden></a>
+    {% if comercio_sesion %}
+    <a class="boton boton--aceite" href="{{ url_for('web.mi_comercio') }}">Abrir mi comercio: {{ comercio_sesion.nombre }}</a>
+    {% else %}
     <a class="boton boton--aceite" href="{{ url_for('web.registro') }}">Registrar mi comercio</a>
+    <a class="boton" href="{{ url_for('auth.login_comercio') }}">Ya tengo cuenta: entrar a mi comercio</a>
+    {% endif %}
     <a class="boton" href="{{ url_for('web.recolector') }}">Soy recolector</a>
     <a class="boton" href="{{ url_for('web.impacto') }}">Ver el impacto del piloto</a>
   </div>

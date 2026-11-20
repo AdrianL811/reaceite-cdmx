@@ -1,19 +1,22 @@
-"""Despachador en segundo plano: cola de salida (outbox), banco simulado y regla de 48 h.
+"""Despachador en segundo plano: cola de salida (outbox), pasarela simulada, regla de 48 h
+y vencimiento de los depósitos en contenedores.
 
 Patrón outbox: la orden de pago se guarda en la misma transacción que la recolección; este hilo
-la envía después a la API SPEI con reintentos. Si el servidor se reinicia, nada se pierde:
-lo pendiente se retoma al arrancar.
+la envía después a la API de pagos con reintentos. Si el servidor se reinicia, nada se pierde:
+lo pendiente se retoma al arrancar. Si el Fondo de Garantía de Dispersión no alcanza, el pago
+espera (sin perderse) hasta que una venta de lote lo recargue.
 """
 import json
 import logging
 import threading
 import time
 
-from . import eventos, servicios, spei_sim, transporte
+from . import eventos, iot, servicios, spei_sim, transporte
 from .db import ahora_iso, conectar, transaccion
 
 log = logging.getLogger("reaceite.despachador")
 MAX_INTENTOS = 6
+ESPERA_FONDOS_S = 15
 
 
 class Despachador:
@@ -23,6 +26,7 @@ class Despachador:
         self._candado = threading.Lock()
         self._hilo = None
         self._ultima_revision = 0.0
+        self._ultima_revision_iot = 0.0
         self._ocupado = False
 
     @property
@@ -75,6 +79,11 @@ class Despachador:
                     self._ultima_revision = time.monotonic()
                     with transaccion(conn):
                         servicios.revisar_esperas(conn)
+                if time.monotonic() - self._ultima_revision_iot > 10:
+                    self._ultima_revision_iot = time.monotonic()
+                    with transaccion(conn):
+                        if iot.revisar_depositos(conn):
+                            total += procesar_outbox(self.app, conn)
                 self._ocupado = spei_sim.hay_pendientes(conn) or conn.execute(
                     "SELECT EXISTS(SELECT 1 FROM outbox WHERE estado = 'PENDIENTE')").fetchone()[0] == 1
                 return total
@@ -99,6 +108,8 @@ def procesar_outbox(app, conn):
         hechas += 1
         if fila["tipo"] == "pago.solicitar":
             _solicitar_pago(app, conn, fila)
+        elif fila["tipo"] == "billetera.abrir":
+            _abrir_billetera(app, conn, fila)
         else:
             conn.execute("UPDATE outbox SET estado = 'FALLIDO', ultimo_error = 'tipo desconocido' WHERE id = ?",
                          (fila["id"],))
@@ -160,6 +171,22 @@ def _solicitar_pago(app, conn, fila):
                 },
             )
             return
+        if respuesta is not None and respuesta.status == 409 and respuesta.json().get("error") == "fondos_insuficientes":
+            # El fondo no alcanza: el pago no se rechaza, espera la próxima recarga (venta de lote).
+            primera = not (fila["ultimo_error"] or "").startswith("fondos_insuficientes")
+            motivo = f"fondos_insuficientes: {respuesta.json().get('mensaje', '')}"
+            conn.execute("UPDATE outbox SET estado = 'PENDIENTE', intentos = ?, ultimo_error = ?, proximo = ?, "
+                         "actualizado = ? WHERE id = ?",
+                         (intentos, motivo, ahora_iso(ESPERA_FONDOS_S), ahora, fila["id"]))
+            conn.execute("UPDATE pago SET intentos = ?, ultimo_error = ? WHERE folio = ?",
+                         (intentos, "En espera: el Fondo de Garantía de Dispersión se está recargando", orden["pago"]))
+            if primera:
+                eventos.registrar(
+                    conn, "fondo.insuficiente",
+                    f"{orden['pago']} por ${orden['monto']} en espera: el Fondo de Garantía de Dispersión no "
+                    f"alcanza; se paga en cuanto se venda el siguiente lote",
+                    ref=orden["recoleccion"], detalle={"respuesta": respuesta.json()})
+            return
         definitivo = respuesta is not None and 400 <= respuesta.status < 500 and respuesta.status not in (408, 425, 429)
         motivo = f"HTTP {respuesta.status}: {respuesta.json().get('mensaje', '')}" if respuesta is not None else error
         if definitivo or intentos >= MAX_INTENTOS:
@@ -178,3 +205,28 @@ def _solicitar_pago(app, conn, fila):
             eventos.registrar(conn, "spei.reintento",
                               f"El envío de {orden['pago']} falló ({motivo}); reintento en {espera} s",
                               ref=orden["recoleccion"], detalle={"intento": intentos, "motivo": motivo})
+
+
+def _abrir_billetera(app, conn, fila):
+    """Alta de la billetera del comercio en la pasarela simulada (idempotente por CLABE)."""
+    datos = json.loads(fila["payload"])
+    cuerpo = json.dumps(datos, ensure_ascii=False).encode()
+    cabeceras = {"Content-Type": "application/json", "Authorization": f"Bearer {app.config['SPEI_API_KEY']}"}
+    try:
+        r = transporte.enviar(app, "POST", "/sim-spei/v1/cuentas", cuerpo, cabeceras)
+        status, motivo = r.status, f"HTTP {r.status}"
+    except Exception as e:
+        status, motivo = None, type(e).__name__
+    intentos = fila["intentos"] + 1
+    ahora = ahora_iso()
+    with transaccion(conn):
+        if status in (200, 201):
+            conn.execute("UPDATE outbox SET estado = 'ENVIADO', intentos = ?, actualizado = ? WHERE id = ?",
+                         (intentos, ahora, fila["id"]))
+        elif intentos >= MAX_INTENTOS or (status is not None and 400 <= status < 500):
+            conn.execute("UPDATE outbox SET estado = 'FALLIDO', intentos = ?, ultimo_error = ?, actualizado = ? "
+                         "WHERE id = ?", (intentos, motivo, ahora, fila["id"]))
+        else:
+            conn.execute("UPDATE outbox SET estado = 'PENDIENTE', intentos = ?, ultimo_error = ?, proximo = ?, "
+                         "actualizado = ? WHERE id = ?",
+                         (intentos, motivo, ahora_iso(min(60, 2 ** intentos)), ahora, fila["id"]))

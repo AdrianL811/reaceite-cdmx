@@ -2,7 +2,9 @@
 import json
 
 from . import clabe as clabe_mod
-from .config import DEPOSITO, FRANJAS, PARAMETROS, ZONAS
+from . import spei_sim
+from .config import DEPOSITO, FRANJAS, PARAMETROS, PLANTA, ZONAS
+from .cuentas import formato_telefono
 from .db import local
 from .eventos import ETAPAS
 from .metricas import litros_txt, pesos
@@ -59,6 +61,8 @@ def _pago(p):
         "creado": _f(p["creado"]),
         "liquidado": _f(p["liquidado"]),
         "error": p["ultimo_error"] if p["estatus"] == "RECHAZADO" else None,
+        "espera": p["ultimo_error"] if p["estatus"] == "PENDIENTE" and (p["ultimo_error"] or "").startswith("En espera")
+        else None,
     }
 
 
@@ -87,19 +91,38 @@ def comercio(conn, c):
             "agua_l": h["agua_l"],
             "monto": pesos(h["monto_cent"]),
             "estatus": h["estatus"],
+            "origen": h["origen"],
+            "contenedor": h["contenedor"],
         }
         for h in conn.execute(
-            "SELECT r.folio, r.creado, r.litros_cl, r.agua_l, p.monto_cent, p.estatus FROM recoleccion r "
-            "JOIN pago p ON p.recoleccion_id = r.id WHERE r.comercio_id = ? ORDER BY r.id DESC LIMIT 6",
+            "SELECT r.folio, r.creado, r.litros_cl, r.agua_l, r.origen, p.monto_cent, p.estatus, k.nombre AS contenedor "
+            "FROM recoleccion r JOIN pago p ON p.recoleccion_id = r.id LEFT JOIN contenedor k ON k.id = r.contenedor_id "
+            "WHERE r.comercio_id = ? ORDER BY r.id DESC LIMIT 6",
             (c["id"],),
         )
     ]
+    contenedores = [
+        {"codigo": k["codigo"], "token": k["token"], "nombre": k["nombre"], "direccion": k["direccion"],
+         "zona": ZONAS[k["zona"]]["nombre"], "misma_zona": k["zona"] == c["zona"],
+         "porcentaje": min(100, round(k["nivel_cl"] / k["capacidad_l"]))}
+        for k in conn.execute("SELECT * FROM contenedor ORDER BY (zona = ?) DESC, id", (c["zona"],))
+    ]
+    abierto = conn.execute(
+        "SELECT d.folio, k.token FROM deposito d JOIN contenedor k ON k.id = d.contenedor_id "
+        "WHERE d.comercio_id = ? AND d.estado = 'ABIERTO'", (c["id"],)).fetchone()
     return {
         "codigo": c["codigo"],
         "token": c["token"],
         "nombre": c["nombre"],
         "tipo": c["tipo"],
         "direccion": c["direccion"],
+        "telefono": formato_telefono(c["telefono"]),
+        "qr": {
+            "imagen": f"/qr/c/{c['token']}.png",
+            "descargar": f"/qr/c/{c['token']}.png?descargar=1",
+            "pegado": bool(c["qr_confirmado"]),
+        },
+        "pin_temporal": bool(c["pin_temporal"]),
         "franja": c["franja"],
         "zona": _zona(conn, c["zona"]),
         "clabe": clabe_mod.enmascarar(c["clabe"]),
@@ -111,6 +134,9 @@ def comercio(conn, c):
         "solicitud": _solicitud(conn, abierta),
         "ultimo_pago": ultimo_pago,
         "historial": historial,
+        "billetera": {"clabe": clabe_mod.enmascarar(c["clabe"]), "celular": formato_telefono(c["telefono"])},
+        "contenedores": contenedores,
+        "deposito_abierto": {"folio": abierto["folio"], "url": f"/k/{abierto['token']}"} if abierto else None,
     }
 
 
@@ -311,4 +337,47 @@ def monitor(conn, desde=0):
         "banco": banco,
         "cola": cola,
         "etapas": ETAPAS,
+        "fondo": fondo(conn),
+        "contenedores": _contenedores(conn),
     }
+
+
+def fondo(conn):
+    """Fondo de Garantía de Dispersión: saldo, lo que ya salió hacia las billeteras y el aceite por vender."""
+    from .servicios import inventario
+
+    cuenta = spei_sim.cuenta_por_clabe(conn, spei_sim.FONDO_CLABE)
+    saldo = cuenta["saldo_cent"] if cuenta else 0
+    cargos = conn.execute(
+        "SELECT COALESCE(SUM(monto_cent), 0) FROM movimiento WHERE cuenta_id = ? AND tipo = 'CARGO'",
+        (cuenta["id"] if cuenta else 0,)).fetchone()[0]
+    en_espera = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(monto_cent), 0) FROM pago WHERE estatus = 'PENDIENTE' AND ultimo_error LIKE "
+        "'En espera%'").fetchone()
+    inv = inventario(conn)
+    lotes = [
+        {"folio": l["folio"], "litros": litros_txt(l["litros_cl"]), "venta": pesos(l["venta_cent"]),
+         "margen": pesos(l["venta_cent"] - l["costo_cent"]), "creado": _f(l["creado"])}
+        for l in conn.execute("SELECT * FROM lote ORDER BY id DESC LIMIT 3")
+    ]
+    return {
+        "saldo": pesos(saldo),
+        "clabe": clabe_mod.enmascarar(spei_sim.FONDO_CLABE),
+        "dispersado": pesos(cargos),
+        "alerta": saldo < int(PARAMETROS["fondo_alerta"] * 100),
+        "pagos_en_espera": en_espera[0],
+        "monto_en_espera": pesos(en_espera[1]),
+        "planta": PLANTA["nombre"],
+        "precio_planta": pesos(inv["precio_cent"]),
+        "inventario": {"litros": litros_txt(inv["litros_cl"]), "recolecciones": inv["recolecciones"],
+                       "costo": pesos(inv["costo_cent"]), "venta": pesos(inv["venta_cent"]),
+                       "margen": pesos(inv["venta_cent"] - inv["costo_cent"]),
+                       "minimo_l": PARAMETROS["lote_minimo_litros"],
+                       "listo": inv["litros_cl"] >= PARAMETROS["lote_minimo_litros"] * 100},
+        "lotes": lotes,
+    }
+
+
+def _contenedores(conn):
+    from .iot import lista
+    return lista(conn)

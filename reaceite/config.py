@@ -41,6 +41,16 @@ PARAMETROS = {
     # Velocidad promedio del recolector en ciudad (km/h) y tiempo de servicio por parada (min).
     "velocidad_kmh": 18,
     "servicio_min": 5,
+    # Precio por litro que paga la planta de biocombustible por el aceite agregado (MXN).
+    "precio_planta_litro": Decimal(_env("PRECIO_PLANTA", "10.00")),
+    # Litros mínimos para armar un lote de venta a la planta.
+    "lote_minimo_litros": int(_env("LOTE_MINIMO_LITROS", "20")),
+    # Saldo del Fondo de Garantía de Dispersión por debajo del cual se avisa en el centro de control.
+    "fondo_alerta": Decimal(_env("FONDO_ALERTA", "10000.00")),
+    # Porcentaje de llenado del contenedor inteligente que dispara la alerta de vaciado.
+    "contenedor_alerta": int(_env("CONTENEDOR_ALERTA", "80")),
+    # Minutos que la compuerta del contenedor queda abierta para un depósito.
+    "deposito_minutos": int(_env("DEPOSITO_MINUTOS", "5")),
 }
 
 LITROS_OPCIONES = (5, 10, 20)
@@ -64,6 +74,17 @@ TIPOS_COMERCIO = ("Taquería", "Fonda", "Churrería", "Puesto ambulante", "Resta
 # Centro de acopio desde donde sale y a donde regresa el recolector.
 DEPOSITO = {"nombre": "Centro de acopio piloto", "lat": 19.4050, "lon": -99.1700}
 
+# Planta de biocombustible aliada que compra los lotes (en el piloto, cuenta simulada).
+PLANTA = {"nombre": "Planta de biocombustible aliada", "codigo": "PLANTA-01"}
+
+# Contenedores inteligentes del piloto: código, nombre, dirección, zona, lat, lon, capacidad en litros.
+CONTENEDORES = (
+    ("CTN-0001", "Contenedor Parque México", "Av. México y Michoacán, junto al puesto de periódicos",
+     "hipodromo", 19.41186, -99.16954, 120),
+    ("CTN-0002", "Contenedor Jardín Pushkin", "Av. Cuauhtémoc y Álvaro Obregón", "roma-norte",
+     19.41705, -99.15812, 120),
+)
+
 
 class Config:
     # Si no se define SECRET_KEY, se deriva de los secretos del despliegue para que las sesiones
@@ -78,6 +99,10 @@ class Config:
     WEBHOOK_SECRET = _env("WEBHOOK_SECRET", "whsec_reaceite_demo")
     # Segundos que tarda el banco simulado en liquidar una orden.
     SPEI_DEMORA_S = float(_env("SPEI_DEMORA_S", "1.2"))
+    # Capital semilla con el que arranca el Fondo de Garantía de Dispersión (MXN).
+    FONDO_INICIAL = _env("FONDO_INICIAL", "45000.00")
+    # Secreto maestro de los contenedores: cada dispositivo firma con HMAC(IOT_SECRET, código).
+    IOT_SECRET = _env("IOT_SECRET", "iot_reaceite_demo")
 
     # URL con la que el servidor se llama a sí mismo (API SPEI y webhooks).
     PORT = int(_env("PORT", "5000"))
@@ -91,11 +116,20 @@ class Config:
 
     RECOLECTOR_PASSWORD = _env("RECOLECTOR_PASSWORD", "aceite2026")
     ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "900cib-admin")
+    # PIN de 6 dígitos de los 8 comercios de demostración (su usuario es su celular: 55 1000 00NN).
+    PIN_DEMO = _env("PIN_DEMO", "900900")
+
+    # Cuentas de comercio: el usuario es el celular y la contraseña un PIN de 6 dígitos.
+    PIN_INTENTOS = int(_env("PIN_INTENTOS", "5"))           # intentos fallidos antes del bloqueo
+    PIN_BLOQUEO_MIN = int(_env("PIN_BLOQUEO_MIN", "15"))    # minutos de bloqueo
 
     DESPACHADOR_AUTO = _env("DESPACHADOR_AUTO", "1") == "1"
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = _env("RENDER") is not None or _env("COOKIE_SEGURA") == "1"
-    PERMANENT_SESSION_LIFETIME = 60 * 60 * 12
+    # La cookie dura 90 días (sesión del comercio, se renueva con cada visita);
+    # la del recolector y la administración caduca antes, a las 12 horas (ver auth.py).
+    PERMANENT_SESSION_LIFETIME = 60 * 60 * 24 * 90
+    SESION_EQUIPO_HORAS = 12
     JSON_SORT_KEYS = False
     MAX_CONTENT_LENGTH = 64 * 1024

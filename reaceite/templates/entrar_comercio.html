@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Entra a tu comercio · ReAceite{% endblock %}
+{% block contenido %}
+<h1>Entra a tu comercio</h1>
+<p class="suave">Usa el celular con el que te registraste y tu PIN de 6 números.</p>
+{% if error %}<div class="mensaje mensaje--error" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="{{ url_for('auth.login_comercio') }}">
+  <input type="hidden" name="siguiente" value="{{ siguiente }}">
+  <label class="campo">
+    <span>Tu celular</span>
+    <input name="telefono" type="tel" inputmode="numeric" autocomplete="username" maxlength="20"
+           placeholder="10 dígitos" value="{{ telefono }}" required {% if not telefono %}autofocus{% endif %}>
+  </label>
+  <label class="campo">
+    <span>Tu PIN</span>
+    <input class="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+           autocomplete="current-password" required {% if telefono %}autofocus{% endif %}>
+  </label>
+  <button class="boton boton--aceite" type="submit">Entrar</button>
+</form>
+<p class="suave chico bloque">¿Olvidaste tu PIN? Pídele al recolector o al equipo de ReAceite que lo restablezca: te darán uno temporal para entrar y cambiarlo.</p>
+<div class="acciones">
+  <a class="boton" href="{{ url_for('web.registro') }}">Todavía no tengo cuenta: registrar mi comercio</a>
+</div>
+<p class="suave chico bloque"><a href="{{ url_for('auth.login') }}">Soy recolector</a></p>
+{% endblock %}

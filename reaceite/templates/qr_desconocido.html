@@ -2,9 +2,10 @@
 {% block titulo %}Código no registrado · ReAceite{% endblock %}
 {% block contenido %}
 <h1>Este código no está registrado</h1>
-<p>El QR que escaneaste no corresponde a ningún comercio del piloto. Si es tu bote, regístralo y te damos un código nuevo.</p>
+<p>El QR que escaneaste no corresponde a ningún comercio del piloto, o su dueño ya lo reemplazó por uno nuevo. Si es tu bote, entra a tu comercio para ver tu QR actual; si no tienes cuenta, regístrate.</p>
 <div class="acciones">
-  <a class="boton boton--aceite" href="{{ url_for('web.registro') }}">Registrar mi comercio</a>
+  <a class="boton boton--aceite" href="{{ url_for('web.mi_comercio') }}">Entrar a mi comercio</a>
+  <a class="boton" href="{{ url_for('web.registro') }}">Registrar mi comercio</a>
   <a class="boton" href="/">Ir al inicio</a>
 </div>
 {% endblock %}

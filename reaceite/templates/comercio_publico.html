@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}{{ comercio.nombre }} · ReAceite{% endblock %}
+{% block contenido %}
+<div class="cabeza-comercio">
+  <div>
+    <h1>{{ comercio.nombre }}</h1>
+    <span class="suave">{{ comercio.codigo }}, {{ comercio.tipo|lower }}</span>
+  </div>
+  <span class="etiqueta">{{ zonas[comercio.zona].nombre }}</span>
+</div>
+
+{% if otro %}
+<div class="mensaje mensaje--info" role="status">Tienes abierta la cuenta de {{ otro.nombre }}. Este bote es de otro comercio.</div>
+{% endif %}
+
+<section class="superficie publico">
+  <h2>Este bote recicla su aceite con ReAceite</h2>
+  <p>El aceite usado de este comercio no va a la coladera: lo recolectamos para hacer biocombustible. Cada litro protege 1,000 litros de agua.</p>
+</section>
+
+<div class="acciones bloque">
+  <a class="boton boton--aceite" href="{{ url_for('auth.login_comercio', siguiente=url_for('web.comercio', token=comercio.token)) }}">Es mi bote: entrar con mi celular y PIN</a>
+  <a class="boton" href="{{ url_for('auth.login', siguiente=url_for('web.pesar', token=comercio.token)) }}">Soy recolector: pesar este bote</a>
+  <a class="boton" href="{{ url_for('web.registro') }}">Quiero registrar mi comercio</a>
+</div>
+<p class="suave chico">Por seguridad, solo el dueño del comercio puede pedir recolecciones y ver sus pagos.</p>
+{% endblock %}

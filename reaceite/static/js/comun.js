@@ -123,16 +123,8 @@ export function sondear(funcion, intervalo) {
   };
 }
 
-export const miComercio = {
-  leer() {
-    try { return JSON.parse(localStorage.getItem("reaceite.comercio")); } catch { return null; }
-  },
-  guardar(c) {
-    try {
-      localStorage.setItem("reaceite.comercio", JSON.stringify({ token: c.token, nombre: c.nombre, codigo: c.codigo }));
-    } catch { /* almacenamiento no disponible */ }
-  },
-};
+// La versión anterior recordaba el comercio en este navegador; ahora la cuenta vive en el servidor.
+try { localStorage.removeItem("reaceite.comercio"); } catch { /* almacenamiento no disponible */ }
 
 export function datosJSON(id) {
   const nodo = document.getElementById(id);

@@ -4,7 +4,7 @@
 {% block contenido %}
 <div class="no-imprimir">
   <h1>Stickers para los botes</h1>
-  <p class="suave">Imprime en papel adhesivo o en hoja carta y protégelo con cinta. Cada QR abre la pantalla de su comercio.</p>
+  <p class="suave">Imprime en papel adhesivo o en hoja carta y protégelo con cinta. Cada QR identifica el bote de un comercio: el recolector lo escanea para pesar y el dueño, con su sesión abierta, para ver su panel.</p>
   <button class="boton boton--aceite boton--chico" type="button" data-imprimir>Imprimir</button>
   <hr class="separador">
 </div>
@@ -15,7 +15,7 @@
     <div>
       <b>{{ c.nombre }}</b>
       <small>{{ c.codigo }}, {{ zonas[c.zona].nombre }}</small>
-      <p>Escanéame para pedir que recojan tu aceite.</p>
+      <p>Aceite usado para reciclar. Recolector: escanea este QR al pesar.</p>
       <small>ReAceite CDMX</small>
     </div>
   </div>
